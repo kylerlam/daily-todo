@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7f8fa">
+  <meta name="description" content="Sign in to your private Daily workspace.">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/themes.css">
+  <link rel="stylesheet" href="/account.css">
+  <title data-i18n="loginTitle">Welcome to Daily</title>
+</head>
+<body class="login-page">
+  <header class="login-topbar">
+    <a class="brand" href="/" data-i18n="appName">Daily</a>
+    <button class="button" id="open-settings" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span data-i18n="settings">Settings</span></button>
+  </header>
+  <main class="login-main">
+    <section class="login-card panel" aria-labelledby="login-title">
+      <div class="login-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg></div>
+      <h1 id="login-title" data-i18n="loginTitle">Welcome to Daily</h1>
+      <p class="login-subtitle" data-i18n="loginSubtitle">A quiet place for your tasks and daily history.</p>
+      <p class="account-notice" id="login-notice" role="status" hidden></p>
+      <form id="login-form">
+        <label class="field"><span data-i18n="username">Username</span><input id="login-username" name="username" autocomplete="username" required maxlength="64" autofocus></label>
+        <label class="field"><span data-i18n="password">Password</span><input id="login-password" name="password" type="password" autocomplete="current-password" required maxlength="256"></label>
+        <p class="form-error" id="login-error" role="alert" hidden></p>
+        <button class="button primary login-submit" type="submit" id="sign-in" data-i18n="signIn">Sign in</button>
+      </form>
+      <div class="initial-credentials">
+        <h2 data-i18n="defaultCredentialsTitle">First sign-in</h2>
+        <dl><div><dt data-i18n="defaultUsername">Default username</dt><dd><code>admin</code></dd></div><div><dt data-i18n="defaultPassword">Default password</dt><dd><code>admin123</code></dd></div></dl>
+        <p data-i18n="defaultCredentialsHint">After signing in, change your username and password in Settings. If already changed, use your current credentials.</p>
+      </div>
+      <p class="registration-note" data-i18n="registrationDisabled">Registration is disabled. This is your personal workspace.</p>
+    </section>
+  </main>
+  <script type="module" src="/login.mjs"></script>
+</body>
+</html>
