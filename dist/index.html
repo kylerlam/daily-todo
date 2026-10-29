@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7f8fa">
+  <meta name="description" content="A quiet place for your tasks and daily history.">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/themes.css">
+  <link rel="stylesheet" href="/account.css">
+  <title data-i18n="documentTitle">Daily · Tasks &amp; Calendar</title>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#calendar" aria-label="Daily home" data-i18n-aria-label="homeLabel" data-i18n="appName">Daily</a>
+    <p class="tagline" data-i18n="tagline">A little space for every day.</p>
+    <button class="button primary" id="new-task"><span data-icon="plus"></span><span data-i18n="newTask">New task</span></button>
+    <button class="icon-button settings-trigger" id="open-settings" type="button" aria-label="Settings" title="Settings" data-i18n-aria-label="settings" data-i18n-title="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>
+  </header>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <nav class="navigation" aria-label="Main navigation" data-i18n-aria-label="navigationLabel">
+        <a class="nav-item" href="#tasks" data-view="tasks"><span data-icon="list"></span><span data-i18n="navTasks">Tasks</span><span id="pending-count" class="nav-count" hidden></span></a>
+        <a class="nav-item" href="#calendar" data-view="calendar"><span data-icon="calendar"></span><span data-i18n="navCalendar">Calendar</span></a>
+      </nav>
+      <button class="export-link" type="button" id="open-export"><span data-icon="export"></span><span data-i18n="exportData">Export data</span></button>
+    </aside>
+    <main id="main" tabindex="-1">
+      <div class="page-heading"><h1 id="page-title" data-i18n="calendarTitle">Calendar</h1><p id="page-subtitle" data-i18n="calendarSubtitle">Pick a day and see what got done.</p></div>
+      <p class="error-banner" id="page-error" role="alert" hidden></p>
+      <section id="calendar-view" class="calendar-workspace" aria-label="Calendar and daily tasks" data-i18n-aria-label="calendarRegionLabel">
+        <div class="panel calendar-panel">
+          <div class="month-toolbar">
+            <label class="month-picker" title="Choose month" data-i18n-title="chooseMonth"><span id="month-label"></span><input type="month" id="month-input" aria-label="Choose month" data-i18n-aria-label="chooseMonth" min="1900-01" max="9998-12"></label>
+            <div class="month-controls"><button class="icon-button" id="previous-month" aria-label="Previous month" data-i18n-aria-label="previousMonth"><span data-icon="left"></span></button><button class="button today-button" id="today" data-i18n="today">Today</button><button class="icon-button" id="next-month" aria-label="Next month" data-i18n-aria-label="nextMonth"><span data-icon="right"></span></button></div>
+          </div>
+          <div class="weekdays" aria-hidden="true"><span data-i18n="weekdayMon">M</span><span data-i18n="weekdayTue">T</span><span data-i18n="weekdayWed">W</span><span data-i18n="weekdayThu">T</span><span data-i18n="weekdayFri">F</span><span data-i18n="weekdaySat">S</span><span data-i18n="weekdaySun">S</span></div>
+          <div id="calendar-grid" class="calendar-grid" aria-label="Choose date" data-i18n-aria-label="selectedDateLabel"></div>
+          <div class="calendar-legend"><span><i class="activity-dot done-dot"></i><span data-i18n="legendCompleted">Completed</span></span><span><i class="activity-dot pending-dot"></i><span data-i18n="legendPending">Pending</span></span></div>
+        </div>
+        <section class="panel day-panel" aria-labelledby="day-title">
+          <div class="day-header"><h2 id="day-title"></h2><p id="day-summary" aria-live="polite" data-i18n="dayLoading">Loading…</p><div class="progress-track" role="progressbar" aria-label="Daily completion progress" data-i18n-aria-label="dayProgressLabel" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="day-progress"></div></div></div>
+          <div id="day-list" class="task-list"></div>
+          <p class="panel-footer" id="day-footer" data-i18n="dayFooterToday">Completed tasks stay here.</p>
+        </section>
+      </section>
+      <section id="tasks-view" hidden aria-label="Tasks" data-i18n-aria-label="navTasks">
+        <div class="panel all-tasks-panel">
+          <form class="quick-add" id="quick-add"><span data-icon="plus"></span><input id="quick-title" aria-label="Quick add a task" data-i18n-aria-label="quickAddLabel" placeholder="One thing you would like to do…" data-i18n-placeholder="quickAddPlaceholder" maxlength="300" required autocomplete="off"><button class="button primary" type="submit" data-i18n="addTask">Add</button></form>
+          <div class="list-section-header"><h2 data-i18n="tasksSectionTitle">Your tasks</h2><span id="tasks-summary" aria-live="polite"></span></div>
+          <div id="all-task-list" class="task-list"></div>
+          <p class="panel-footer" data-i18n="listFooter">Unfinished tasks carry forward. Find completed tasks in your calendar.</p>
+        </div>
+      </section>
+      <noscript><p class="error-banner">Please enable JavaScript to use Daily.</p></noscript>
+    </main>
+  </div>
+  <dialog id="task-dialog" aria-labelledby="dialog-title">
+    <form id="task-form">
+      <div class="dialog-heading"><h2 id="dialog-title" data-i18n="newTask">New task</h2><button class="icon-button" type="button" id="close-dialog" aria-label="Close" data-i18n-aria-label="closeDialog"><span data-icon="close"></span></button></div>
+      <label class="field"><span data-i18n="taskTitleLabel">What would you like to do?</span><input id="task-title" name="title" required maxlength="300" autocomplete="off" placeholder="For example, read a chapter" data-i18n-placeholder="taskTitlePlaceholder"></label>
+      <label class="field"><span data-i18n="notesLabel">Notes</span> <span class="optional" data-i18n="optional">Optional</span><textarea id="task-notes" name="notes" rows="3" maxlength="5000" placeholder="Details, an address, or a note to yourself…" data-i18n-placeholder="notesPlaceholder"></textarea></label>
+      <label class="field date-field"><span data-i18n="startDateLabel">Start date</span><input id="task-day" name="day" type="date" required></label>
+      <p class="field-hint" id="date-hint" data-i18n="newDateHint">It appears from this day and carries forward until done.</p>
+      <p class="form-error" id="form-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button class="button" type="button" id="cancel-dialog" data-i18n="cancel">Cancel</button><button class="button primary" type="submit" id="save-task" data-i18n="saveTask">Save task</button></div>
+    </form>
+  </dialog>
+  <dialog id="discard-dialog" aria-labelledby="discard-title">
+    <div class="dialog-heading"><h2 id="discard-title" data-i18n="discardDialogTitle">Let this task go?</h2></div>
+    <p class="discard-description" data-i18n="discardDescription">Remove it from your active list, keep its history, and do not count it as completed.</p>
+    <div class="dialog-actions"><button class="button" id="keep-task" data-i18n="keepTask">Keep task</button><button class="button primary" id="confirm-discard" data-i18n="discardTask">Let it go</button></div>
+  </dialog>
+  <dialog id="export-dialog" aria-labelledby="export-title">
+    <div class="dialog-heading"><h2 id="export-title" data-i18n="exportDialogTitle">Export data</h2><button class="icon-button" type="button" id="close-export" aria-label="Close export" data-i18n-aria-label="closeExport"><span data-icon="close"></span></button></div>
+    <p class="export-description" data-i18n="exportDescription">All tasks and history. Your existing data stays untouched.</p>
+    <label class="field"><span data-i18n="exportFormatLabel">File format</span><select id="export-format"><option value="yml" data-i18n="ymlDefault">YML (default)</option><option value="json" data-i18n="jsonFormat">JSON</option></select></label>
+    <p class="export-filename" id="export-filename"></p><p class="field-hint" id="export-hint"></p><p class="form-error" id="export-error" role="alert" hidden></p>
+    <div class="dialog-actions"><button class="button" type="button" id="cancel-export" data-i18n="cancel">Cancel</button><button class="button primary" type="button" id="save-export" data-i18n="chooseSaveLocation">Choose save location</button></div>
+  </dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
