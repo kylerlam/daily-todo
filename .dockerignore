@@ -1,0 +1,17 @@
+data
+docs
+tests
+**/__pycache__
+.DS_Store
+.git
+.env
+.env.*
+exports
+backup
+backups
+*.sqlite*
+*.db
+*.db-*
+tdl-*.json
+tdl-*.yml
+tdl-*.yaml
