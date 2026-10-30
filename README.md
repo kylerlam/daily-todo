@@ -2,7 +2,7 @@
 
 This `codex/browser-demo` branch is a standalone, static demo of Daily Todo. Open it and try the task list and calendar without signing in. The fictional examples and your changes stay in your browser’s localStorage. Visitors do not share a database.
 
-The demo is based on committed version `ddf98ad` of the production application. The production version remains on `main`. This branch contains code prepared for hosting; no public demo URL or Cloudflare deployment has been created.
+The demo is based on committed version `ddf98ad` of the production application. The production version remains on `main`. The public demo is available at **[daily-todo-demo.pages.dev](https://daily-todo-demo.pages.dev/)** on Cloudflare Pages. It is separate from the NAS-hosted production application.
 
 ## Try the demo locally
 
@@ -32,23 +32,18 @@ If storage is blocked or full, the app reports that changes were not saved. Inva
 
 The backend, Docker files, and their tests remain in the repository as production reference code. **Do not run `backend/server.py`, Docker Compose, or publish the repository root for this demo.** Deploy only `dist/`, on a separate static origin without proxying `/api` to the production service. Runtime databases, accounts, sessions, `.env`, private `docs/`, exports, and backups are excluded from Git and from the static deployment directory.
 
-## Cloudflare Pages settings
+## Published Cloudflare Pages demo
 
-Create a Pages project connected to `kylerlam/daily-todo`, using these settings:
+- **Public URL:** [https://daily-todo-demo.pages.dev/](https://daily-todo-demo.pages.dev/).
+- **Pages project:** `daily-todo-demo`.
+- **Deployment method:** dashboard Direct Upload, production environment, using only the 11 static files from `dist/`. No build command, environment variables, secrets, Functions, Workers, or database are required.
+- **Source:** `codex/browser-demo`; the deployed assets were uploaded from commit `9baf40eb58306c2ed23977504aad12241d257fb3`. Later documentation-only commits leave those assets unchanged.
 
-| Setting | Value |
-| --- | --- |
-| Production branch | `codex/browser-demo` |
-| Framework preset | None |
-| Root directory | Repository root (leave blank) |
-| Build command | `exit 0` |
-| Build output directory | `dist` |
-| Environment variables / secrets | None |
-| Functions, Workers, databases | None |
+Direct Upload is manual: pushing this Git branch does **not** automatically update the public demo. To publish an update, check out the intended demo commit, verify that `dist/` contains only the static demo assets, then use **Pages → daily-todo-demo → Create deployment → Production** and upload the contents of `dist/` (or a ZIP with `index.html` at its root). Never upload the repository root, backend, runtime data, or private configuration.
 
-These follow Cloudflare’s [Static HTML guide](https://developers.cloudflare.com/pages/framework-guides/deploy-anything/) and [build configuration reference](https://developers.cloudflare.com/pages/configuration/build-configuration/). The output directory contains the ready-to-serve `index.html` and assets. For a manual Direct Upload, upload only the contents of `dist/`. If enabling Git integration, select the demo branch explicitly and limit preview builds to that branch so production branches are not accidentally published by this Pages project.
+The dashboard labels the Direct Upload production source as `main`; no Git repository is connected, and this label does not deploy the repository’s production branch. The uploaded file contents, rather than that label, identify this demo’s source. Automatic Git deployments would require a separate Git-integrated Pages project; see Cloudflare’s [Direct Upload guide](https://developers.cloudflare.com/pages/get-started/direct-upload/).
 
-After deployment, verify the demo banner, create/edit/complete, calendar history, reload persistence, reset, and a browser Network log with no `/api` requests. No demo URL is recorded until a real deployment exists.
+Public HTTPS verification confirmed that all 11 hosted assets exactly match the committed `dist/` files. Create/edit/complete, calendar history, reload persistence, and reset were tested, with no `/api` requests or browser console errors. Repeat those checks after future uploads. Browser storage is specific to the demo URL and is not shared with the NAS production application.
 
 ## Development checks
 
