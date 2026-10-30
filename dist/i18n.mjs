@@ -3,6 +3,15 @@ const storageKey = 'daily-todo-language';
 
 // Each row contains English, Spanish, Simplified Chinese, and Traditional Chinese.
 const entries = {
+  demoLabel: ['Browser demo', 'Demo en el navegador', '浏览器演示', '瀏覽器演示'],
+  demoNotice: ['Fictional examples. Data stays in this browser only; it is not synced.', 'Ejemplos ficticios. Los datos solo se guardan en este navegador; no se sincronizan.', '虚构示例。数据仅保存在此浏览器，不会同步。', '虛構示例。資料僅儲存在此瀏覽器，不會同步。'],
+  demoReset: ['Reset sample data', 'Restablecer ejemplos', '重置示例数据', '重置示例資料'],
+  demoResetConfirm: ['Replace this browser’s demo tasks and history with fresh examples?', '¿Reemplazar las tareas y el historial de la demo de este navegador por ejemplos nuevos?', '将此浏览器的演示待办及历史替换为新示例？', '將此瀏覽器的演示待辦及歷史替換為新示例？'],
+  demoResetDone: ['Sample data reset.', 'Ejemplos restablecidos.', '已重置示例数据。', '已重置示例資料。'],
+  demoNoAccount: ['Demo mode has no account or password.', 'La demo no tiene cuenta ni contraseña.', '演示模式没有账号或密码。', '演示模式沒有帳號或密碼。'],
+  'errors.DEMO_CLOCK_ERROR': ['Your device clock is earlier than the saved demo history. Correct the clock and try again; changes were not saved.', 'El reloj del dispositivo es anterior al historial guardado. Corrige el reloj y vuelve a intentarlo; no se guardaron los cambios.', '设备时间早于已保存的演示历史。请校正时间后重试；修改未保存。', '裝置時間早於已儲存的演示歷史。請校正時間後重試；修改未儲存。'],
+  'errors.DEMO_STORAGE_ERROR': ['Browser storage is unavailable or full. Allow site storage or free space, then try again. Changes were not saved.', 'El almacenamiento del navegador no está disponible o está lleno. Permite el almacenamiento o libera espacio y vuelve a intentarlo. No se guardaron los cambios.', '浏览器储存不可用或已满。请允许网站储存或释放空间后重试；修改未保存。', '瀏覽器儲存不可用或已滿。請允許網站儲存或釋放空間後重試；修改未儲存。'],
+  'errors.DEMO_STORAGE_INVALID': ['Saved demo data cannot be read. Reset sample data to start again; this replaces only the demo tasks and history.', 'No se pueden leer los datos de la demo. Restablece los ejemplos para empezar de nuevo; solo se reemplazan las tareas y el historial de la demo.', '无法读取演示数据。请重置示例资料重新开始；只会替换演示待办及历史。', '無法讀取演示資料。請重置示例資料重新開始；只會替換演示待辦及歷史。'],
   appName: ['Daily Todo', 'Tareas diarias', '日常', '日常'],
   documentTitle: ['Daily Todo · Tasks & Calendar', 'Tareas diarias · Lista y calendario', '日常 · 待办与日历', '日常 · 待辦與日曆'],
   tagline: ['A little record of every day.', 'Un pequeño registro de cada día.', '把每一天，留在这里。', '把每一天，留在這裡。'],
@@ -71,7 +80,7 @@ const entries = {
   exportSaved: ['Saved to your chosen location.', 'Guardado en la ubicación elegida.', '已保存到你选择的位置', '已儲存到你選擇的位置'],
   exportCancelled: ['Save cancelled.', 'Guardado cancelado.', '已取消保存', '已取消儲存'],
   exportFailed: ['The file was not saved. Check save permissions and try again.', 'No se guardó el archivo. Comprueba los permisos e inténtalo de nuevo.', '没有保存文件。请检查保存权限后重试。', '未儲存檔案。請檢查儲存權限後重試。'],
-  reconnect: ['Reconnect', 'Volver a conectar', '重新连接', '重新連線'],
+  reconnect: ['Try again', 'Volver a intentar', '重试', '重試'],
   networkError: ['Cannot connect right now. Check that the service is running.', 'No se puede conectar. Comprueba que el servicio esté en marcha.', '暂时连接不上，请检查服务是否正在运行。', '暫時無法連線，請檢查服務是否正在執行。'],
   calendarDaySummary: ['{date}, {completed} completed, {pending} pending', '{date}, {completed} completadas, {pending} pendientes', '{date}，已完成{completed}项，待办{pending}项', '{date}，已完成{completed}項，待辦{pending}項'],
   calendarDayEmpty: ['{date}, no records', '{date}, sin registros', '{date}，没有记录', '{date}，沒有記錄'],

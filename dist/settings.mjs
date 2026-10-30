@@ -1,8 +1,7 @@
 import { applyTranslations, getLocale, setLocale, t } from './i18n.mjs';
 import { THEMES, getTheme, setTheme, applyTheme } from './theme.mjs';
-import { authRequest, errorMessage, redirectToLogin } from './auth.mjs';
 
-export function initSettings(user = null) {
+export function initSettings() {
   applyTheme();
   const dialog = document.createElement('dialog');
   dialog.id = 'settings-dialog';
@@ -17,24 +16,10 @@ export function initSettings(user = null) {
       <h4 data-i18n="glassTheme">Glass</h4><div class="theme-grid glass-theme-grid" id="glass-themes"></div>
       <h4 data-i18n="gradientThemes">Gradients</h4><div class="theme-grid" id="gradient-themes"></div>
     </section>
-    <section class="account-section" aria-labelledby="account-heading" hidden>
-      <div class="account-section-heading"><h3 id="account-heading" data-i18n="account">Account</h3><button class="button sign-out-button" type="button" id="sign-out" data-i18n="signOut">Sign out</button></div>
-      <p class="field-hint" data-i18n="accountChangeHint">Changing your username or password signs out every device. Sign in again with your new credentials.</p>
-      <form id="account-form">
-        <label class="field"><span data-i18n="username">Username</span><input id="account-username" name="username" autocomplete="username" required minlength="2" maxlength="64"></label>
-        <label class="field"><span data-i18n="currentPassword">Current password</span><input id="account-current-password" name="current_password" type="password" autocomplete="current-password" required maxlength="256"></label>
-        <label class="field"><span data-i18n="newPassword">New password</span><input id="account-new-password" name="new_password" type="password" autocomplete="new-password" minlength="8" maxlength="256"></label>
-        <p class="field-hint" data-i18n="newPasswordHint">At least 8 characters. Leave empty to keep your current password.</p>
-        <p class="form-error" id="account-error" role="alert" hidden></p>
-        <div class="dialog-actions"><button class="button primary" type="submit" id="save-account" data-i18n="saveAccount">Save account</button></div>
-      </form>
-    </section>`;
+    <p class="field-hint" data-i18n="demoNoAccount">Demo mode has no account or password.</p>`;
   document.body.append(dialog);
   const select = dialog.querySelector('#language-select');
-  const errorBox = dialog.querySelector('#account-error');
-  const saveButton = dialog.querySelector('#save-account');
   const closeButton = dialog.querySelector('#close-settings');
-  let busy = false;
 
   function renderThemes() {
     for (const id of ['fresh-themes', 'glass-themes', 'gradient-themes']) dialog.querySelector('#' + id).replaceChildren();
@@ -64,62 +49,13 @@ export function initSettings(user = null) {
   }
   document.querySelector('#open-settings')?.addEventListener('click', () => {
     refresh();
-    errorBox.hidden = true;
-    if (user) {
-      dialog.querySelector('.account-section').hidden = false;
-      dialog.querySelector('#account-username').value = user.username;
-      dialog.querySelector('#account-current-password').value = '';
-      dialog.querySelector('#account-new-password').value = '';
-    }
     dialog.showModal();
   });
-  closeButton.addEventListener('click', () => { if (!busy) dialog.close(); });
-  dialog.addEventListener('cancel', (event) => { if (busy) event.preventDefault(); });
+  closeButton.addEventListener('click', () => dialog.close());
   select.addEventListener('change', () => setLocale(select.value));
   window.addEventListener('localechange', refresh);
   window.addEventListener('themechange', () => {
     dialog.querySelectorAll('[data-theme-choice]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.themeChoice === getTheme())));
-  });
-  function setBusy(value) {
-    busy = value;
-    closeButton.disabled = value;
-    dialog.querySelector('#sign-out').disabled = value;
-    saveButton.disabled = value;
-    dialog.querySelectorAll('#account-form input').forEach((input) => { input.readOnly = value; });
-    saveButton.textContent = t(value ? 'saving' : 'saveAccount');
-  }
-  dialog.querySelector('#sign-out').addEventListener('click', async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await authRequest('/api/auth/logout', { method: 'POST', body: '{}' });
-      redirectToLogin();
-    } catch (error) {
-      errorBox.textContent = errorMessage(error);
-      errorBox.hidden = false;
-      setBusy(false);
-    }
-  });
-  dialog.querySelector('#account-form').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    if (busy) return;
-    const body = {
-      username: dialog.querySelector('#account-username').value.trim(),
-      current_password: dialog.querySelector('#account-current-password').value,
-    };
-    const password = dialog.querySelector('#account-new-password').value;
-    if (password) body.new_password = password;
-    errorBox.hidden = true;
-    setBusy(true);
-    try {
-      await authRequest('/api/account', { method: 'PATCH', body: JSON.stringify(body) });
-      redirectToLogin(true);
-    } catch (error) {
-      if (error.code === 'AUTH_REQUIRED') { redirectToLogin(); return; }
-      errorBox.textContent = errorMessage(error);
-      errorBox.hidden = false;
-      setBusy(false);
-    }
   });
   refresh();
   return dialog;

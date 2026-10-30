@@ -1,10 +1,11 @@
 import { downloadExport, saveExport } from './export-file.mjs';
 import { applyTranslations, formatDate, t } from './i18n.mjs';
-import { requireLogin, redirectToLogin, errorMessage } from './auth.mjs';
+import { createDemoStore } from './demo-store.mjs';
 import { initSettings } from './settings.mjs';
 import { applyTheme } from './theme.mjs';
 
 applyTheme();
+const store = createDemoStore();
 
 const $ = (selector) => document.querySelector(selector);
 const icons = {
@@ -57,23 +58,10 @@ let formSaving = false;
 let discardingTask = null;
 let toastTimer;
 
-async function api(path, options = {}) {
-  let response;
-  try {
-    response = await fetch(path, { ...options, headers: options.body ? { 'Content-Type': 'application/json' } : {}, cache: 'no-store' });
-  } catch {
-    throw new Error(t('networkError'));
-  }
-  const body = await response.json();
-  if (!response.ok) {
-    if (body.code === 'AUTH_REQUIRED') redirectToLogin();
-    const key = 'errors.' + body.code;
-    const message = t(key);
-    const error = new Error(message === key ? t('saveFailed') : message);
-    error.code = body.code;
-    throw error;
-  }
-  return body;
+function errorMessage(error) {
+  const key = 'errors.' + error.code;
+  const message = t(key);
+  return message === key ? error.message : message;
 }
 function toast(message, error = false) {
   clearTimeout(toastTimer);
@@ -95,7 +83,7 @@ async function load() {
   const date = state.selected, month = state.month;
   try {
     const [current, day, monthly] = await Promise.all([
-      api('/api/tasks'), api('/api/day?date=' + date), api('/api/month?month=' + month),
+      store.current(), store.day(date), store.month(month),
     ]);
     if (version !== requestId) return;
     const previousToday = state.today;
@@ -112,7 +100,7 @@ async function load() {
     $('#page-error').hidden = true;
     render();
   } catch (error) {
-    if (version === requestId) showError(error.message);
+    if (version === requestId) showError(errorMessage(error));
   }
 }
 function renderCalendar() {
@@ -297,11 +285,11 @@ async function mutateTask(id, changes, messageKey) {
   state.busy = true;
   render();
   try {
-    await api('/api/tasks/' + id, { method: 'PATCH', body: JSON.stringify(changes) });
+    store.patch(id, changes);
     await load();
     toast(t(messageKey));
   } catch (error) {
-    toast(error.message, true);
+    toast(errorMessage(error), true);
   } finally {
     state.busy = false;
     render();
@@ -347,7 +335,7 @@ $('#task-form').addEventListener('submit', async (event) => {
   if (!targetTask) changes.day = $('#task-day').value;
   setFormSaving(true);
   try {
-    const task = await api(targetTask ? '/api/tasks/' + targetTask.id : '/api/tasks', { method: targetTask ? 'PATCH' : 'POST', body: JSON.stringify(changes) });
+    const task = targetTask ? store.patch(targetTask.id, changes) : store.create(changes);
     $('#task-dialog').close();
     if (state.view === 'calendar' && !targetTask) {
       state.selected = task.day > state.today ? task.day : state.today;
@@ -357,7 +345,7 @@ $('#task-form').addEventListener('submit', async (event) => {
     await load();
     toast(t(targetTask ? 'taskSaved' : 'taskAdded'));
   } catch (error) {
-    $('#form-error').textContent = error.message;
+    $('#form-error').textContent = errorMessage(error);
     $('#form-error').hidden = false;
   } finally { setFormSaving(false); }
 });
@@ -371,10 +359,10 @@ $('#quick-add').addEventListener('submit', async (event) => {
   button.disabled = true;
   input.disabled = true;
   try {
-    await api('/api/tasks', { method: 'POST', body: JSON.stringify({ title }) });
+    store.create({ title });
     input.value = '';
     await load();
-  } catch (error) { toast(error.message, true); }
+  } catch (error) { toast(errorMessage(error), true); }
   finally { state.busy = false; input.disabled = false; button.disabled = false; render(); input.focus(); }
 });
 $('#new-task').addEventListener('click', () => openForm());
@@ -404,7 +392,7 @@ setInterval(() => { if (!document.hidden && !state.busy && !$('#task-dialog').op
 let exportSaving = false;
 function exportOptions() {
   const format = $('#export-format').value;
-  return { format, filename: 'tdl-' + state.today + '.' + format, mime: format === 'json' ? 'application/json' : 'application/yaml', description: t('exportFileType', { format: format === 'json' ? 'JSON' : 'YAML' }) };
+  return { format, filename: 'tdl-demo-' + state.today + '.' + format, mime: format === 'json' ? 'application/json' : 'application/yaml', description: t('exportFileType', { format: format === 'json' ? 'JSON' : 'YAML' }) };
 }
 function canChooseExportLocation() {
   return window.isSecureContext && typeof window.showSaveFilePicker === 'function';
@@ -431,6 +419,8 @@ function setExportSaving(saving) {
 $('#save-export').addEventListener('click', async () => {
   if (exportSaving) return;
   const options = exportOptions();
+  // JSON is also valid YAML 1.2; both formats contain only this browser's demo data.
+  options.getBlob = () => new Blob([JSON.stringify(store.exportData(), null, 2) + '\n'], { type: options.mime });
   const chooseLocation = canChooseExportLocation();
   $('#export-error').hidden = true;
   setExportSaving(true);
@@ -440,12 +430,10 @@ $('#save-export').addEventListener('click', async () => {
     toast(t(chooseLocation ? 'exportSaved' : 'exportDownloadStarted'));
     $('#export-dialog').close();
   } catch (error) {
-    if (error.code === 'AUTH_REQUIRED' || error.status === 401) {
-      redirectToLogin();
-    } else if (error.name === 'AbortError') {
+    if (error.name === 'AbortError') {
       toast(t('exportCancelled'));
     } else {
-      $('#export-error').textContent = t('exportFailed');
+      $('#export-error').textContent = error.code?.startsWith('DEMO_') ? errorMessage(error) : t('exportFailed');
       $('#export-error').hidden = false;
     }
   } finally {
@@ -471,12 +459,20 @@ window.addEventListener('localechange', () => {
   if ($('#export-dialog').open) updateExportDialog();
 });
 applyTranslations(document);
-try {
-  const user = await requireLogin();
-  if (user) {
-    initSettings(user);
-    route();
+initSettings();
+$('#reset-demo').addEventListener('click', async () => {
+  if (!window.confirm(t('demoResetConfirm'))) return;
+  try {
+    store.reset();
+    state.today = localToday();
+    state.selected = state.today;
+    state.month = state.today.slice(0, 7);
+    history.replaceState(null, '', '#calendar/' + state.today);
+    state.view = 'calendar';
+    await load();
+    toast(t('demoResetDone'));
+  } catch (error) {
+    showError(errorMessage(error));
   }
-} catch (error) {
-  showError(errorMessage(error), () => location.reload());
-}
+});
+route();

@@ -1,17 +1,5 @@
-async function fetchExport(format) {
-  const response = await fetch(`/api/export?format=${encodeURIComponent(format)}`, { cache: "no-store" });
-  if (!response.ok) {
-    let body = {};
-    try { body = await response.json(); } catch { /* HTTP errors may have no JSON body. */ }
-    const error = new Error("Export failed. Please try again.");
-    error.code = body?.code || (response.status === 401 ? "AUTH_REQUIRED" : "EXPORT_FAILED");
-    error.status = response.status;
-    throw error;
-  }
-  return response.blob();
-}
-
 export async function saveExport({
+  getBlob,
   format = "yml",
   filename = `daily-todo.${format === "json" ? "json" : "yml"}`,
   mime = format === "json" ? "application/json" : "application/yaml",
@@ -25,7 +13,7 @@ export async function saveExport({
       accept: { [mime.split(";")[0].trim()]: [format === "json" ? ".json" : ".yml"] },
     }],
   });
-  const blob = await fetchExport(format);
+  const blob = await getBlob();
   const writer = await handle.createWritable();
   try {
     await writer.write(blob);
@@ -37,10 +25,11 @@ export async function saveExport({
 }
 
 export async function downloadExport({
+  getBlob,
   format = "yml",
   filename = `daily-todo.${format === "json" ? "json" : "yml"}`,
 } = {}) {
-  const blob = await fetchExport(format);
+  const blob = await getBlob();
   const url = URL.createObjectURL(blob);
   const download = document.createElement("a");
   try {

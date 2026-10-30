@@ -237,3 +237,14 @@ dialog::backdrop { background: #19282055; backdrop-filter: blur(3px); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }
 }
+
+body { min-height: 100dvh; display: flex; flex-direction: column; }
+.topbar { flex-shrink: 0; }
+.app-shell { flex: 1; min-height: 0; }
+.demo-banner { width: 100%; max-width: 1440px; margin: 0 auto; padding: 14px 40px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); }
+.demo-banner p { margin: 0; display: grid; gap: 4px; font-size: 13px; line-height: 1.5; }
+.demo-banner strong { color: var(--text); }
+.demo-banner .button { flex-shrink: 0; }
+@media (max-width: 600px) {
+  .demo-banner { padding: 12px 20px; align-items: flex-start; flex-direction: column; gap: 10px; }
+}
