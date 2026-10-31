@@ -54,7 +54,7 @@ const state = { today: localToday(), selected: localToday(), month: localToday()
 let requestId = 0;
 let editingTask = null;
 let formSaving = false;
-let discardingTask = null;
+let deletingTask = null;
 let toastTimer;
 
 async function api(path, options = {}) {
@@ -180,7 +180,7 @@ function makeTaskRow(task, readOnly) {
   check.disabled = readOnly || state.busy || task.discarded || task.day > state.today;
   if (task.completed) check.append(svgElement('check'));
   if (task.discarded) check.append(svgElement('close'));
-  check.addEventListener('click', () => mutateTask(task.id, { completed: !task.completed }, task.completed ? 'taskRestored' : 'taskCompleted'));
+  check.addEventListener('click', () => mutateTask(task.id, { completed: !task.completed, created_at: task.created_at }, task.completed ? 'taskRestored' : 'taskCompleted'));
   const copy = node('div', 'task-copy');
   copy.append(node('p', 'task-title', task.title));
   if (task.notes) copy.append(node('p', 'task-notes', task.notes));
@@ -188,41 +188,40 @@ function makeTaskRow(task, readOnly) {
   else if (task.day > state.today) copy.append(node('span', 'task-meta', t('taskStarts', { date: dateText(task.day, { month: 'long', day: 'numeric' }) })));
   else if (!task.completed && task.day < state.selected) copy.append(node('span', 'task-meta', t('taskContinues', { date: dateText(task.day, { month: 'long', day: 'numeric' }) })));
   row.append(check, copy);
+  const actions = node('div', 'row-actions');
+  const menuButton = node('button', 'icon-button row-menu-button');
+  menuButton.type = 'button';
+  menuButton.append(svgElement('more'));
+  menuButton.setAttribute('aria-label', t('taskMoreLabel', { title: task.title }));
+  menuButton.setAttribute('aria-expanded', 'false');
+  menuButton.disabled = state.busy;
+  const menu = node('div', 'task-menu');
+  menu.hidden = true;
   if (!readOnly && !task.discarded) {
-    const actions = node('div', 'row-actions');
-    const menuButton = node('button', 'icon-button row-menu-button');
-    menuButton.type = 'button';
-    menuButton.append(svgElement('more'));
-    menuButton.setAttribute('aria-label', t('taskMoreLabel', { title: task.title }));
-    menuButton.setAttribute('aria-expanded', 'false');
-    menuButton.disabled = state.busy;
-    const menu = node('div', 'task-menu');
-    menu.hidden = true;
     const edit = node('button', '', t('editTask'));
     edit.type = 'button';
     edit.addEventListener('click', () => { menu.hidden = true; openForm(task); });
     menu.append(edit);
-    if (!task.completed) {
-      const discard = node('button', '', t('discardTask'));
-      discard.type = 'button';
-      discard.addEventListener('click', () => {
-        menu.hidden = true;
-        discardingTask = task;
-        $('#discard-dialog').showModal();
-      });
-      menu.append(discard);
-    }
-    menuButton.addEventListener('click', (event) => {
-      event.stopPropagation();
-      const wasHidden = menu.hidden;
-      closeMenus();
-      menu.hidden = !wasHidden;
-      menuButton.setAttribute('aria-expanded', String(wasHidden));
-      if (wasHidden) edit.focus();
-    });
-    actions.append(menuButton, menu);
-    row.append(actions);
   }
+  const remove = node('button', '', t('deleteTask'));
+  remove.type = 'button';
+  remove.addEventListener('click', () => {
+    menu.hidden = true;
+    deletingTask = task;
+    $('#delete-task-name').textContent = task.title;
+    $('#delete-dialog').showModal();
+  });
+  menu.append(remove);
+  menuButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const wasHidden = menu.hidden;
+    closeMenus();
+    menu.hidden = !wasHidden;
+    menuButton.setAttribute('aria-expanded', String(wasHidden));
+    if (wasHidden) menu.firstElementChild.focus();
+  });
+  actions.append(menuButton, menu);
+  row.append(actions);
   return row;
 }
 function emptyState(container, past = false) {
@@ -292,12 +291,12 @@ function route() {
   render();
   load();
 }
-async function mutateTask(id, changes, messageKey) {
+async function mutateTask(id, changes, messageKey, method = 'PATCH') {
   if (state.busy) return;
   state.busy = true;
   render();
   try {
-    await api('/api/tasks/' + id, { method: 'PATCH', body: JSON.stringify(changes) });
+    await api('/api/tasks/' + id, { method, body: JSON.stringify(changes) });
     await load();
     toast(t(messageKey));
   } catch (error) {
@@ -344,7 +343,8 @@ $('#task-form').addEventListener('submit', async (event) => {
   if (!title) { $('#task-title').focus(); return; }
   $('#form-error').hidden = true;
   const changes = { title, notes: $('#task-notes').value };
-  if (!targetTask) changes.day = $('#task-day').value;
+  if (targetTask) changes.created_at = targetTask.created_at;
+  else changes.day = $('#task-day').value;
   setFormSaving(true);
   try {
     const task = await api(targetTask ? '/api/tasks/' + targetTask.id : '/api/tasks', { method: targetTask ? 'PATCH' : 'POST', body: JSON.stringify(changes) });
@@ -381,10 +381,10 @@ $('#new-task').addEventListener('click', () => openForm());
 $('#close-dialog').addEventListener('click', () => $('#task-dialog').close());
 $('#cancel-dialog').addEventListener('click', () => $('#task-dialog').close());
 $('#task-dialog').addEventListener('cancel', (event) => { if (formSaving) event.preventDefault(); });
-$('#keep-task').addEventListener('click', () => $('#discard-dialog').close());
-$('#confirm-discard').addEventListener('click', () => {
-  $('#discard-dialog').close();
-  if (discardingTask) mutateTask(discardingTask.id, { discarded: true }, 'taskDiscarded');
+$('#keep-task').addEventListener('click', () => $('#delete-dialog').close());
+$('#confirm-delete').addEventListener('click', () => {
+  $('#delete-dialog').close();
+  if (deletingTask) mutateTask(deletingTask.id, { created_at: deletingTask.created_at }, 'taskDeleted', 'DELETE');
 });
 $('#previous-month').addEventListener('click', () => selectDate(shiftMonth(state.month, -1) + '-01'));
 $('#next-month').addEventListener('click', () => selectDate(shiftMonth(state.month, 1) + '-01'));
@@ -400,7 +400,7 @@ document.addEventListener('click', closeMenus);
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenus(); });
 window.addEventListener('hashchange', route);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
-setInterval(() => { if (!document.hidden && !state.busy && !$('#task-dialog').open && !$('#discard-dialog').open && !$('#export-dialog').open) load(); }, 60000);
+setInterval(() => { if (!document.hidden && !state.busy && !$('#task-dialog').open && !$('#delete-dialog').open && !$('#export-dialog').open) load(); }, 60000);
 let exportSaving = false;
 function exportOptions() {
   const format = $('#export-format').value;

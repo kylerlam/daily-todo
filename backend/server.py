@@ -164,8 +164,7 @@ class Store:
                 CREATE INDEX IF NOT EXISTS events_task_date ON events(task_id, effective_date, id);
                 CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events
                     BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
-                CREATE TRIGGER IF NOT EXISTS events_no_delete BEFORE DELETE ON events
-                    BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
+                DROP TRIGGER IF EXISTS events_no_delete;
                 CREATE TABLE IF NOT EXISTS accounts (
                     id INTEGER PRIMARY KEY CHECK(id = 1),
                     username TEXT NOT NULL UNIQUE,
@@ -304,8 +303,8 @@ class Store:
             return self.task(self.latest(db, task_id))
 
     def patch(self, task_id, data):
-        validate_fields(data, {"title", "notes", "completed", "discarded"})
-        if not data:
+        validate_fields(data, {"title", "notes", "completed", "discarded", "created_at"})
+        if not data.keys() - {"created_at"}:
             raise RequestError("Provide at least one change.", code="EMPTY_UPDATE")
         if "completed" in data and "discarded" in data:
             raise RequestError("Change only one task status at a time.", code="CONFLICTING_STATUS")
@@ -313,6 +312,8 @@ class Store:
             db.execute("BEGIN IMMEDIATE")
             now = self.now()
             old = self.latest(db, task_id)
+            if "created_at" in data and old["created_at"] != data["created_at"]:
+                raise RequestError("The task has changed. Refresh before changing it.", 409, "TASK_CHANGED")
             title = data.get("title", old["title"]).strip()
             notes = data.get("notes", old["notes"])
             kind = old["kind"]
@@ -327,6 +328,15 @@ class Store:
                 db.execute("UPDATE tasks SET title=?, notes=? WHERE id=?", (title, notes, task_id))
                 self.append_event(db, task_id, kind, now, state_at, title, notes)
             return self.task(self.latest(db, task_id))
+
+    def delete(self, task_id, expected_created_at=None):
+        with closing(self.connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            old = self.latest(db, task_id)
+            if expected_created_at is not None and old["created_at"] != expected_created_at:
+                raise RequestError("The task has changed. Refresh before deleting it.", 409, "TASK_CHANGED")
+            db.execute("DELETE FROM events WHERE task_id=?", (task_id,))
+            db.execute("DELETE FROM tasks WHERE id=?", (task_id,))
 
     def rows_on(self, db, selected):
         return db.execute("""
@@ -565,7 +575,18 @@ def make_server(host, port, store, dist_dir, secure_cookie=None):
                     return self.send_json(store.import_data(data.get("content")))
                 match = re.fullmatch(r"/api/tasks/(\d+)", path)
                 if self.command == "PATCH" and match:
-                    return self.send_json(store.patch(int(match[1]), self.body()))
+                    data = self.body()
+                    validate_fields(data, {"title", "notes", "completed", "discarded", "created_at"})
+                    if not isinstance(data.get("created_at"), str) or not data["created_at"]:
+                        raise RequestError("The task has changed. Refresh before changing it.", 409, "TASK_CHANGED")
+                    return self.send_json(store.patch(int(match[1]), data))
+                if self.command == "DELETE" and match:
+                    data = self.body()
+                    validate_fields(data, {"created_at"})
+                    if not isinstance(data.get("created_at"), str) or not data["created_at"]:
+                        raise RequestError("Provide the task creation timestamp.", code="INVALID_CREATED_AT")
+                    store.delete(int(match[1]), data["created_at"])
+                    return self.send_json({"ok": True})
                 raise RequestError("This method is not allowed.", 405, "METHOD_NOT_ALLOWED")
             except RequestError as error:
                 self.send_json({"error": str(error), "code": error.code}, error.status)

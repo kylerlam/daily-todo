@@ -7,10 +7,10 @@ A small personal todo list and calendar, released under the MIT License. The cal
 - Add tasks, edit their notes, and check them off. Completed titles and notes are crossed out. Today's completed tasks remain on the main list; earlier completions are available in the calendar.
 - Select a calendar date to review completed and unfinished tasks. Select the month heading to choose a month and year, or use **Today** to return to the current day.
 - Unfinished tasks carry forward. Completion is recorded on the day you actually check the task off, rather than its scheduled start date.
-- Past dates preserve the text and status at the end of that day. Completing, renaming, reopening, or stopping a task later does not rewrite an earlier day's snapshot.
-- If you complete and undo a task on the same day, that day's final status is shown. The underlying events are retained. Past dates are read-only; backdating a completion is not supported.
+- Past dates preserve the text and status at the end of that day. Completing, renaming, or reopening a task later does not rewrite an earlier day's snapshot. Explicitly deleting a task removes its snapshots from every date.
+- If you complete and undo a task on the same day, that day's final status is shown. The underlying events are retained. Past dates cannot be edited or checked off, but tasks can be deleted from them; backdating a completion is not supported.
 - A future start date keeps a task visible as planned work. It cannot be completed before that date.
-- Use **More actions → Stop doing** for tasks you no longer intend to finish. This removes them from the active list while retaining their history, with a separate stopped status that does not count as completion.
+- Use **More actions → Delete** for mistaken entries or tasks you no longer want to keep. After confirmation, the task and all its history are permanently removed from the database, calendar, and subsequent exports. Deletion is available for pending, completed, and previously stopped tasks, including in past calendar dates. Previously stopped tasks are retained until you explicitly delete them.
 
 This version provides tasks and a calendar. It does not include recurring habits.
 
@@ -136,7 +136,7 @@ Recreating with `docker compose up -d` applies a changed environment value. Comp
 
 ## Export and import data
 
-**Export data** downloads YML (YAML) by default, with JSON available as an alternative. Both contain all tasks and their history events. Exports exclude account credentials and sessions and do not modify task history. Each authenticated HTTP export also atomically saves a YML copy as `daily todo/data/daily-todo.yml`, even when the requested download is JSON. This is a snapshot from the export request, not a live-synchronized file; later task changes appear in it only after another export.
+**Export data** downloads YML (YAML) by default, with JSON available as an alternative. Both contain all tasks and their history events. Exports exclude account credentials and sessions and do not modify task history. Each authenticated HTTP export also atomically saves a YML copy as `daily todo/data/daily-todo.yml`, even when the requested download is JSON. This is a snapshot from the export request, not a live-synchronized file; later task changes appear in it only after another export. Deleting a task does not change exports or backups already saved; importing an old export can restore a deleted task.
 
 On desktop browsers that implement the File System Access save picker, in a secure context such as localhost or HTTPS, the app opens the system save dialog before fetching the export. Choose a folder and filename there. Cancelling the picker stops the operation without starting a fallback download. A failed write or close attempts to abort the writable stream and does not report success.
 
@@ -163,7 +163,7 @@ Import merges task history without clearing existing data. An identical export o
 
 ## Long-term storage and recovery
 
-The primary database is `daily todo/data/todo.sqlite3`. While the service runs, SQLite may also create `-wal` and `-shm` files. Tasks, append-only history snapshots, account credentials, and sessions are persisted in this host-mounted directory. The application does not automatically expire task history. Historical records are protected against application-level updates and deletion. Long-term availability still depends on retaining the data and maintaining usable backups.
+The primary database is `daily todo/data/todo.sqlite3`. While the service runs, SQLite may also create `-wal` and `-shm` files. Tasks, history snapshots, account credentials, and sessions are persisted in this host-mounted directory. The application does not automatically expire task history. Ordinary task changes append history rather than rewriting it; explicitly deleting a task removes that task and all its history in one transaction. Long-term availability still depends on retaining the data and maintaining usable backups.
 
 For a complete backup, stop the container, copy the entire `daily todo/data/` directory and retain `daily todo/config/app.toml`, then start the container again. To restore, stop the container, retain a copy of the current data, put the backed-up directory and configuration back at the same mounted paths, and restart to verify them. Do not copy only the main database file while the service is running and omit its WAL. A database backup includes account and session records as well as task history; a YML/JSON export and `daily-todo.yml` do not.
 

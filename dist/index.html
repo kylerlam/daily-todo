@@ -67,10 +67,11 @@
       <div class="dialog-actions"><button class="button" type="button" id="cancel-dialog" data-i18n="cancel">Cancel</button><button class="button primary" type="submit" id="save-task" data-i18n="saveTask">Save task</button></div>
     </form>
   </dialog>
-  <dialog id="discard-dialog" aria-labelledby="discard-title">
-    <div class="dialog-heading"><h2 id="discard-title" data-i18n="discardDialogTitle">Let this task go?</h2></div>
-    <p class="discard-description" data-i18n="discardDescription">Remove it from your active list, keep its history, and do not count it as completed.</p>
-    <div class="dialog-actions"><button class="button" id="keep-task" data-i18n="keepTask">Keep task</button><button class="button primary" id="confirm-discard" data-i18n="discardTask">Let it go</button></div>
+  <dialog id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-task-name delete-description">
+    <div class="dialog-heading"><h2 id="delete-title" data-i18n="deleteDialogTitle">Delete this task?</h2></div>
+    <p id="delete-task-name" class="task-title"></p>
+    <p id="delete-description" class="discard-description" data-i18n="deleteDescription">Permanently delete this task and all its calendar history. This cannot be undone.</p>
+    <div class="dialog-actions"><button class="button" id="keep-task" data-i18n="keepTask">Keep task</button><button class="button primary" id="confirm-delete" data-i18n="deleteTask">Delete</button></div>
   </dialog>
   <dialog id="export-dialog" aria-labelledby="export-title">
     <div class="dialog-heading"><h2 id="export-title" data-i18n="exportDialogTitle">Export data</h2><button class="icon-button" type="button" id="close-export" aria-label="Close export" data-i18n-aria-label="closeExport"><span data-icon="close"></span></button></div>

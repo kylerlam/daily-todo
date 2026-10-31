@@ -81,6 +81,63 @@ class StoreTests(unittest.TestCase):
         self.store.patch(task["id"], {"discarded": False})
         self.assertEqual(self.store.day("2026-10-31")["summary"]["pending"], 1)
 
+    def test_delete_removes_task_and_history_but_preserves_other_tasks(self):
+        task = self.store.create({"title": "临时想法", "notes": "无需执行"})
+        kept = self.store.create({"title": "仍然要做"})
+        self.store.patch(task["id"], {"completed": True})
+        self.on("2026-10-30")
+        self.store.patch(task["id"], {"discarded": True})
+        before = self.store.export()
+        self.store.delete(task["id"])
+        after = self.store.export()
+        self.assertEqual(after["tasks"], [row for row in before["tasks"] if row["id"] == kept["id"]])
+        self.assertEqual(after["events"], [row for row in before["events"] if row["task_id"] == kept["id"]])
+        for selected in ("2026-10-29", "2026-10-30", "2026-10-31"):
+            self.assertEqual([row["id"] for row in self.store.day(selected)["tasks"]], [kept["id"]])
+        self.assertEqual([row["id"] for row in self.store.current()["tasks"]], [kept["id"]])
+        self.assertEqual(self.store.month("2026-10")["days"][28]["completed"], 0)
+        with closing(self.store.connect()) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM tasks WHERE id=?", (task["id"],)).fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM events WHERE task_id=?", (task["id"],)).fetchone()[0], 0)
+            self.assertEqual(db.execute("PRAGMA foreign_key_check").fetchall(), [])
+        restarted = Store(self.directory.name, clock=lambda: self.time, timezone="Asia/Hong_Kong")
+        self.assertEqual(restarted.export()["tasks"], after["tasks"])
+        with self.assertRaises(RequestError) as missing:
+            restarted.delete(task["id"])
+        self.assertEqual((missing.exception.status, missing.exception.code), (404, "NOT_FOUND"))
+
+    def test_startup_allows_deleting_legacy_history_without_changing_records(self):
+        task = self.store.create({"title": "旧版任务"})
+        self.store.patch(task["id"], {"discarded": True})
+        before = self.store.export()
+        with closing(self.store.connect()) as db, db:
+            db.executescript("""
+                CREATE TRIGGER events_no_delete BEFORE DELETE ON events
+                    BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
+            """)
+            with self.assertRaises(sqlite3.IntegrityError):
+                db.execute("DELETE FROM events WHERE task_id=?", (task["id"],))
+        restarted = Store(self.directory.name, clock=lambda: self.time, timezone="Asia/Hong_Kong")
+        self.assertEqual(restarted.export()["tasks"], before["tasks"])
+        self.assertEqual(restarted.export()["events"], before["events"])
+        restarted.delete(task["id"])
+        self.assertEqual(restarted.export()["tasks"], [])
+        self.assertEqual(restarted.export()["events"], [])
+
+    def test_delete_failure_rolls_back_task_and_history_together(self):
+        task = self.store.create({"title": "删除失败时保留"})
+        self.store.patch(task["id"], {"completed": True})
+        before = self.store.export()
+        with closing(self.store.connect()) as db, db:
+            db.executescript("""
+                CREATE TRIGGER fail_task_delete BEFORE DELETE ON tasks
+                    BEGIN SELECT RAISE(ABORT, 'simulated failure'); END;
+            """)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.store.delete(task["id"])
+        self.assertEqual(self.store.export()["tasks"], before["tasks"])
+        self.assertEqual(self.store.export()["events"], before["events"])
+
     def test_future_schedule_backdated_creation_and_timezone(self):
         future = self.store.create({"title": "明天", "day": "2026-10-30"})
         self.assertEqual(self.store.day("2026-10-29")["tasks"], [])
@@ -133,13 +190,11 @@ class StoreTests(unittest.TestCase):
             with self.assertRaises(RequestError):
                 self.store.month(value)
 
-    def test_history_is_append_only_in_database(self):
+    def test_history_cannot_be_overwritten_in_database(self):
         self.store.create({"title": "不可覆盖"})
         with closing(self.store.connect()) as db, db:
             with self.assertRaises(sqlite3.IntegrityError):
                 db.execute("UPDATE events SET kind='complete'")
-            with self.assertRaises(sqlite3.IntegrityError):
-                db.execute("DELETE FROM events")
 
 
 class HttpTests(unittest.TestCase):
@@ -181,7 +236,8 @@ class HttpTests(unittest.TestCase):
         status, _, body = self.request("POST", "/api/tasks", {"title": "中文任务"})
         self.assertEqual(status, 201)
         task = json.loads(body)
-        status, _, body = self.request("PATCH", f'/api/tasks/{task["id"]}', {"completed": True})
+        status, _, body = self.request("PATCH", f'/api/tasks/{task["id"]}',
+                                       {"completed": True, "created_at": task["created_at"]})
         self.assertEqual(status, 200)
         self.assertTrue(json.loads(body)["completed"])
         today = self.store.today()
@@ -200,6 +256,58 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/health")[0], 200)
         self.assertEqual(self.request("GET", "/calendar/2026-10-30")[2], b"<main>Todo</main>")
         self.assertEqual(self.request("HEAD", "/")[2], b"")
+
+    def test_delete_requires_sign_in_and_same_origin_and_removes_exported_history(self):
+        task = self.store.create({"title": "删除这个临时想法"})
+        self.store.patch(task["id"], {"completed": True})
+        path = f'/api/tasks/{task["id"]}'
+        data = {"created_at": task["created_at"]}
+        for headers, expected in (({"Cookie": ""}, 401),
+                                  ({"Origin": "https://another.example"}, 403),
+                                  ({"Content-Type": "text/plain"}, 415)):
+            with self.subTest(headers=headers):
+                self.assertEqual(self.request("DELETE", path, data, headers=headers)[0], expected)
+                self.assertEqual(len(self.store.export()["events"]), 2)
+        for invalid in ({}, {"created_at": None}, {"created_at": ""}, {**data, "extra": True}):
+            self.assertEqual(self.request("DELETE", path, invalid)[0], 400)
+        status, _, body = self.request("DELETE", path, data)
+        self.assertEqual((status, json.loads(body)), (200, {"ok": True}))
+        self.assertEqual(self.request("DELETE", path, data)[0], 404)
+        status, _, body = self.request("GET", "/api/export?format=json")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["tasks"], [])
+        self.assertEqual(json.loads(body)["events"], [])
+        self.assertNotIn(task["title"], (self.store.path.parent / "daily-todo.yml").read_text())
+
+    def test_stale_delete_cannot_remove_new_task_with_reused_id(self):
+        original = self.store.create({"title": "旧的临时想法"})
+        path = f'/api/tasks/{original["id"]}'
+        data = {"created_at": original["created_at"]}
+        self.assertEqual(self.request("DELETE", path, data)[0], 200)
+        replacement = self.store.create({"title": "后来新建的任务"})
+        self.assertEqual(replacement["id"], original["id"])
+        self.assertNotEqual(replacement["created_at"], original["created_at"])
+        status, _, body = self.request("DELETE", path, data)
+        self.assertEqual((status, json.loads(body)["code"]), (409, "TASK_CHANGED"))
+        self.assertEqual(self.store.current()["tasks"], [replacement])
+        self.assertEqual(len(self.store.export()["events"]), 1)
+        self.assertEqual(self.request("DELETE", path, {"created_at": replacement["created_at"]})[0], 200)
+
+    def test_stale_patch_cannot_modify_new_task_with_reused_id(self):
+        original = self.store.create({"title": "旧的临时想法"})
+        self.store.delete(original["id"], original["created_at"])
+        replacement = self.store.create({"title": "后来新建的任务"})
+        self.assertEqual(replacement["id"], original["id"])
+        path = f'/api/tasks/{original["id"]}'
+        for change in ({"title": "旧页面修改"}, {"completed": True}):
+            for token in ({}, {"created_at": ""}, {"created_at": original["created_at"]}):
+                status, _, body = self.request("PATCH", path, {**change, **token})
+                self.assertEqual((status, json.loads(body)["code"]), (409, "TASK_CHANGED"))
+                self.assertEqual(self.store.current()["tasks"], [replacement])
+                self.assertEqual(len(self.store.export()["events"]), 1)
+        status, _, body = self.request("PATCH", path,
+                                       {"title": "有效修改", "created_at": replacement["created_at"]})
+        self.assertEqual((status, json.loads(body)["title"]), (200, "有效修改"))
 
     def test_yaml_export_is_default_with_complete_history_and_safe_strings(self):
         title = 'yes: #todo "中文" \\ 😀'
@@ -301,7 +409,7 @@ class HttpTests(unittest.TestCase):
                 self.assertEqual(status, 400)
                 self.assertIn("application/json", headers["Content-Type"])
                 self.assertIsInstance(json.loads(content)["error"], str)
-        self.assertEqual(self.request("DELETE", "/api/tasks/1")[0], 405)
+        self.assertEqual(self.request("PUT", "/api/tasks/1")[0], 405)
         self.assertEqual(self.request("GET", "/missing.js")[0], 404)
         self.assertEqual(self.request("GET", "/api/unknown")[0], 404)
 
