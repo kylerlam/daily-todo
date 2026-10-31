@@ -470,6 +470,7 @@ window.addEventListener('localechange', () => {
   if ($('#task-dialog').open) updateTaskDialog();
   if ($('#export-dialog').open) updateExportDialog();
 });
+window.addEventListener('dataimported', () => load());
 applyTranslations(document);
 try {
   const user = await requireLogin();

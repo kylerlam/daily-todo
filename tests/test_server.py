@@ -244,6 +244,48 @@ class HttpTests(unittest.TestCase):
                 self.assertEqual(headers["Content-Type"], "application/json; charset=utf-8")
                 self.assertIsInstance(json.loads(body)["error"], str)
 
+    def test_import_protection_large_yaml_roundtrip_and_repeat(self):
+        source = Store(Path(self.directory.name) / "source",
+                       clock=lambda: datetime.fromisoformat("2026-10-20T10:00:00+08:00"))
+        for number in range(8):
+            source.create({"title": f"Imported {number}", "notes": '"YML" \\ 中文\n' * 300})
+        content = dump_yaml(source.export())
+        self.assertGreater(len(json.dumps({"content": content}).encode()), MAX_BODY)
+        self.assertEqual(self.request("POST", "/api/import", {"content": content}, headers={"Cookie": ""})[0], 401)
+        self.assertEqual(self.request("POST", "/api/import", {"content": content},
+                                      headers={"Origin": "https://another.example"})[0], 403)
+        self.assertEqual(self.store.export()["tasks"], [])
+        status, _, body = self.request("POST", "/api/import", {"content": content})
+        self.assertEqual((status, json.loads(body)), (200, {"imported_tasks": 8, "skipped_tasks": 0}))
+        self.assertEqual(self.store.day("2026-10-20")["summary"]["pending"], 8)
+        status, _, body = self.request("POST", "/api/import", {"content": json.dumps(source.export())})
+        self.assertEqual((status, json.loads(body)), (200, {"imported_tasks": 0, "skipped_tasks": 8}))
+        self.assertEqual(len(self.store.export()["events"]), 8)
+
+    def test_import_rejects_malformed_and_oversize_files_without_writes(self):
+        from backend.data_transfer import MAX_IMPORT_BYTES
+        for content, expected, code in (("not an export", 400, "INVALID_IMPORT"),
+                                         ("x" * (MAX_IMPORT_BYTES + 1), 413, "IMPORT_TOO_LARGE")):
+            with self.subTest(code=code):
+                status, _, body = self.request("POST", "/api/import", {"content": content})
+                self.assertEqual((status, json.loads(body)["code"]), (expected, code))
+        self.assertEqual(self.store.export()["tasks"], [])
+
+        status, _, body = self.request("POST", "/api/import", body=b"[" * 10000 + b"]" * 10000)
+        self.assertEqual((status, json.loads(body)["code"]), (400, "INVALID_JSON"))
+
+    def test_export_writes_identical_atomic_host_snapshot(self):
+        self.store.create({"title": "Saved outside the container"})
+        status, _, body = self.request("GET", "/api/export")
+        self.assertEqual(status, 200)
+        snapshot = self.store.path.parent / "daily-todo.yml"
+        self.assertEqual(snapshot.read_bytes(), body)
+        self.store.create({"title": "Keep previous file if rename fails"})
+        with patch("backend.server.os.replace", side_effect=OSError("simulated full filesystem")):
+            self.assertEqual(self.request("GET", "/api/export")[0], 500)
+        self.assertEqual(snapshot.read_bytes(), body)
+        self.assertEqual(list(self.store.path.parent.glob(".daily-todo-*.tmp")), [])
+
     def test_invalid_http_inputs_and_traversal_have_json_errors(self):
         requests = [("GET", "/api/day?date=2026-02-30", None),
                     ("GET", "/api/day?date=2026-01-01&date=2026-01-02", None),

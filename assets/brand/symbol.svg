@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Daily</title>
+  <desc id="desc">A sage green D with a transparent completion check.</desc>
+  <path fill="#5C7664" fill-rule="evenodd" d="M12 5H30C45.464 5 58 17.088 58 32S45.464 59 30 59H12C8.686 59 6 56.314 6 53V11C6 7.686 8.686 5 12 5ZM16.3 29.3C14.738 30.862 14.738 33.398 16.3 34.96L25.2 43.86C26.762 45.422 29.298 45.422 30.86 43.86L49.86 24.86C51.422 23.298 51.422 20.762 49.86 19.2C48.298 17.638 45.762 17.638 44.2 19.2L28.03 35.37L21.96 29.3C20.398 27.738 17.862 27.738 16.3 29.3Z"/>
+</svg>

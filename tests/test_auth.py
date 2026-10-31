@@ -10,7 +10,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from backend.server import SESSION_SECONDS, Store, make_server
+from backend.server import SESSION_SECONDS, Store, make_server, password_hash
 
 
 class AuthTests(unittest.TestCase):
@@ -53,7 +53,7 @@ class AuthTests(unittest.TestCase):
 
     def test_public_status_default_login_and_protected_data(self):
         self.assertEqual(self.request("GET", "/api/auth/status")[2],
-                         {"authenticated": False, "user": None, "registration_enabled": False})
+                         {"authenticated": False, "user": None, "registration_enabled": False, "show_default_credentials": True})
         self.assertEqual(self.request("GET", "/api/health")[0], 200)
         self.assertEqual(self.request("GET", "/login.html")[2], b"sign in")
         self.assertEqual(self.request("GET", "/style.css")[0], 200)
@@ -68,7 +68,8 @@ class AuthTests(unittest.TestCase):
             self.assertIn(flag, header)
         self.assertNotIn("Secure", header)
         self.assertEqual(self.request("GET", "/api/auth/status", cookie=cookie)[2],
-                         {"authenticated": True, "user": {"username": "admin"}, "registration_enabled": False})
+                         {"authenticated": True, "user": {"username": "admin"}, "registration_enabled": False,
+                          "show_default_credentials": True})
         self.assertEqual(self.request("POST", "/api/tasks", {"title": "private"}, cookie)[0], 201)
         self.assertEqual(self.request("GET", "/api/tasks", cookie=cookie)[2]["tasks"][0]["title"], "private")
         self.assertEqual(self.request("GET", "/", cookie=cookie)[2], b"private app")
@@ -130,6 +131,49 @@ class AuthTests(unittest.TestCase):
             "username": "renamed", "current_password": "admin123"}, cookie)[0], 200)
         self.assertEqual(self.request("GET", "/api/tasks", cookie=cookie)[0], 401)
         self.login("renamed", "admin123")
+
+    def test_default_hint_changes_only_after_a_different_password_and_stays_hidden(self):
+        for data in (
+            {"username": "renamed", "current_password": "wrong", "new_password": "better-password"},
+            {"username": "admin", "current_password": "admin123", "new_password": "short"},
+        ):
+            cookie, _ = self.login()
+            self.assertEqual(self.request("PATCH", "/api/account", data, cookie)[0], 400)
+            self.assertTrue(self.request("GET", "/api/auth/status")[2]["show_default_credentials"])
+        for new_password in ("", "admin123"):
+            cookie, _ = self.login()
+            self.assertEqual(self.request("PATCH", "/api/account", {
+                "username": "admin", "current_password": "admin123", "new_password": new_password}, cookie)[0], 200)
+            self.assertTrue(self.request("GET", "/api/auth/status")[2]["show_default_credentials"])
+        cookie, _ = self.login()
+        self.assertEqual(self.request("PATCH", "/api/account", {
+            "username": "renamed", "current_password": "admin123"}, cookie)[0], 200)
+        self.assertTrue(self.request("GET", "/api/auth/status")[2]["show_default_credentials"])
+        cookie, _ = self.login("renamed", "admin123")
+        self.assertEqual(self.request("PATCH", "/api/account", {
+            "username": "renamed", "current_password": "admin123", "new_password": "better-password"}, cookie)[0], 200)
+        self.assertFalse(self.request("GET", "/api/auth/status")[2]["show_default_credentials"])
+        restarted = Store(Path(self.directory.name) / "data", clock=lambda: self.now, timezone="Asia/Hong_Kong")
+        self.assertFalse(restarted.show_default_credentials())
+        cookie, _ = self.login("renamed", "better-password")
+        self.assertEqual(self.request("PATCH", "/api/account", {
+            "username": "renamed", "current_password": "better-password", "new_password": "admin123"}, cookie)[0], 200)
+        Store(Path(self.directory.name) / "data", clock=lambda: self.now, timezone="Asia/Hong_Kong")
+        self.assertFalse(self.request("GET", "/api/auth/status")[2]["show_default_credentials"])
+
+    def test_old_accounts_infer_password_change_from_hash_not_username(self):
+        for password, expected in (("admin123", True), ("already-custom", False)):
+            with self.subTest(password=password), tempfile.TemporaryDirectory() as directory:
+                salt = "0123456789abcdef" * 2
+                with closing(sqlite3.connect(Path(directory) / "todo.sqlite3")) as db, db:
+                    db.execute("""CREATE TABLE accounts (id INTEGER PRIMARY KEY CHECK(id=1),
+                        username TEXT NOT NULL UNIQUE, salt TEXT NOT NULL, password_hash TEXT NOT NULL)""")
+                    db.execute("INSERT INTO accounts VALUES(1,?,?,?)", ("renamed", salt, password_hash(password, salt)))
+                migrated = Store(directory, clock=lambda: self.now, timezone="Asia/Hong_Kong")
+                self.assertEqual(migrated.show_default_credentials(), expected)
+                migrated.login({"username": "renamed", "password": password})
+                restarted = Store(directory, clock=lambda: self.now, timezone="Asia/Hong_Kong")
+                self.assertEqual(restarted.show_default_credentials(), expected)
 
     def test_registration_csrf_and_content_type_are_rejected(self):
         for path in ("/api/auth/register", "/api/register"):

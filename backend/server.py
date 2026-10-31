@@ -15,16 +15,47 @@ from pathlib import Path
 import re
 import secrets
 import sqlite3
+import tempfile
 import threading
 import time
+import tomllib
 import unicodedata
 from urllib.parse import parse_qs, unquote, urlsplit
 from zoneinfo import ZoneInfo
+
+if __package__:
+    from .data_transfer import ImportDataError, MAX_IMPORT_BYTES, merge_export, read_export
+else:
+    from data_transfer import ImportDataError, MAX_IMPORT_BYTES, merge_export, read_export
 
 
 MAX_BODY = 32768
 PASSWORD_ITERATIONS = 600000
 SESSION_SECONDS = 30 * 24 * 60 * 60
+
+
+def load_config(path=None):
+    settings = {"timezone": "Asia/Hong_Kong", "secure_cookies": False}
+    config = Path(path or "./config/app.toml")
+    if path or config.exists():
+        with config.open("rb") as stream:
+            value = tomllib.load(stream)
+        if set(value) - {"app"} or not isinstance(value.get("app", {}), dict):
+            raise ValueError("Invalid app configuration.")
+        app = value.get("app", {})
+        if set(app) - settings.keys():
+            raise ValueError("Unsupported app configuration field.")
+        settings.update(app)
+    settings["timezone"] = os.environ.get("TZ", settings["timezone"])
+    if os.environ.get("SESSION_COOKIE_SECURE"):
+        setting = os.environ["SESSION_COOKIE_SECURE"].lower()
+        if setting not in ("true", "false", "1", "0"):
+            raise ValueError("SESSION_COOKIE_SECURE must be true or false.")
+        settings["secure_cookies"] = setting in ("true", "1")
+    if type(settings["secure_cookies"]) is not bool or not isinstance(settings["timezone"], str):
+        raise ValueError("Invalid app configuration type.")
+    ZoneInfo(settings["timezone"])
+    return settings
 
 
 def password_hash(password, salt):
@@ -139,7 +170,8 @@ class Store:
                     id INTEGER PRIMARY KEY CHECK(id = 1),
                     username TEXT NOT NULL UNIQUE,
                     salt TEXT NOT NULL,
-                    password_hash TEXT NOT NULL
+                    password_hash TEXT NOT NULL,
+                    password_changed INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS sessions (
                     token_hash TEXT PRIMARY KEY,
@@ -147,9 +179,15 @@ class Store:
                     expires_at INTEGER NOT NULL
                 );
             """)
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(accounts)")}
+            if "password_changed" not in columns:
+                db.execute("ALTER TABLE accounts ADD COLUMN password_changed INTEGER NOT NULL DEFAULT 0")
+                account = db.execute("SELECT salt,password_hash FROM accounts WHERE id=1").fetchone()
+                if account and not hmac.compare_digest(password_hash("admin123", account["salt"]), account["password_hash"]):
+                    db.execute("UPDATE accounts SET password_changed=1 WHERE id=1")
             salt = secrets.token_hex(16)
             if db.execute("SELECT 1 FROM accounts WHERE id=1").fetchone() is None:
-                db.execute("INSERT OR IGNORE INTO accounts VALUES(1,?,?,?)",
+                db.execute("INSERT OR IGNORE INTO accounts(id,username,salt,password_hash) VALUES(1,?,?,?)",
                            ("admin", salt, password_hash("admin123", salt)))
 
     def connect(self):
@@ -163,6 +201,10 @@ class Store:
 
     def today(self):
         return self.now()[:10]
+
+    def show_default_credentials(self):
+        with closing(self.connect()) as db:
+            return not bool(db.execute("SELECT password_changed FROM accounts WHERE id=1").fetchone()[0])
 
     def login(self, data):
         validate_fields(data, {"username", "password"})
@@ -202,17 +244,20 @@ class Store:
             raise RequestError("Use a username without control characters or outer spaces.", code="INVALID_USERNAME")
         current = credential_text(data.get("current_password"), "INVALID_CURRENT_PASSWORD", 0, 256)
         new_password = None
-        if "new_password" in data:
+        if "new_password" in data and data["new_password"] != "":
             new_password = credential_text(data["new_password"], "INVALID_PASSWORD", 8, 256)
         with closing(self.connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             account = db.execute("SELECT * FROM accounts WHERE id=1").fetchone()
             if not hmac.compare_digest(password_hash(current, account["salt"]), account["password_hash"]):
                 raise RequestError("The current password is incorrect.", code="INVALID_CURRENT_PASSWORD")
-            if username != account["username"] or new_password is not None:
-                salt = secrets.token_hex(16) if new_password is not None else account["salt"]
-                hashed = password_hash(new_password, salt) if new_password is not None else account["password_hash"]
-                db.execute("UPDATE accounts SET username=?,salt=?,password_hash=? WHERE id=1", (username, salt, hashed))
+            changed = new_password is not None and not hmac.compare_digest(new_password.encode(), current.encode())
+            if username != account["username"] or changed:
+                salt = secrets.token_hex(16) if changed else account["salt"]
+                hashed = password_hash(new_password, salt) if changed else account["password_hash"]
+                db.execute("""UPDATE accounts SET username=?,salt=?,password_hash=?,
+                    password_changed=CASE WHEN ? THEN 1 ELSE password_changed END WHERE id=1""",
+                    (username, salt, hashed, changed))
             db.execute("DELETE FROM sessions")
 
     @staticmethod
@@ -333,18 +378,39 @@ class Store:
                 days.append({"date": selected, **self.day_payload(db, selected, today)["summary"]})
         return {"month": month, "days": days}
 
-    def export(self):
+    def import_data(self, content):
+        value = read_export(content)
+        with closing(self.connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            return merge_export(db, value)
+
+    def export(self, save=False):
         with closing(self.connect()) as db, db:
             db.execute("BEGIN")
-            return {"format": "tdl-export", "version": 1, "timezone": str(self.zone),
+            value = {"format": "tdl-export", "version": 1, "timezone": str(self.zone),
                     "exported_at": self.now(),
                     "tasks": [dict(row) for row in db.execute("SELECT * FROM tasks ORDER BY id")],
                     "events": [dict(row) for row in db.execute("SELECT * FROM events ORDER BY id")]}
+        if save:
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.path.parent,
+                                                 prefix=".daily-todo-", suffix=".tmp", delete=False) as stream:
+                    temporary = stream.name
+                    stream.write(dump_yaml(value))
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, self.path.parent / "daily-todo.yml")
+            finally:
+                if temporary and Path(temporary).exists():
+                    Path(temporary).unlink()
+        return value
 
 
-def make_server(host, port, store, dist_dir):
+def make_server(host, port, store, dist_dir, secure_cookie=None):
     dist = Path(dist_dir).resolve()
-    secure_cookie = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() in ("1", "true")
+    if secure_cookie is None:
+        secure_cookie = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() in ("1", "true")
     attempts = defaultdict(deque)
     attempts_lock = threading.Lock()
 
@@ -413,20 +479,20 @@ def make_server(host, port, store, dist_dir):
                     raise RequestError("Too many login attempts. Try again in five minutes.", 429, "RATE_LIMITED")
                 history.append(now)
 
-        def body(self):
+        def body(self, limit=MAX_BODY):
             if self.headers.get("Transfer-Encoding"):
                 raise RequestError("Chunked requests are not supported.", code="UNSUPPORTED_TRANSFER_ENCODING")
             try:
                 length = int(self.headers.get("Content-Length", ""))
             except ValueError:
                 raise RequestError("The request length is invalid.", code="INVALID_CONTENT_LENGTH") from None
-            if not 0 < length <= MAX_BODY:
+            if not 0 < length <= limit:
                 raise RequestError("The request body is too large or empty.", code="BODY_TOO_LARGE")
             if self.headers.get_content_type() != "application/json":
                 raise RequestError("Use application/json.", 415, "UNSUPPORTED_CONTENT_TYPE")
             try:
                 return json.loads(self.rfile.read(length))
-            except (ValueError, UnicodeError):
+            except (ValueError, UnicodeError, RecursionError):
                 raise RequestError("The JSON body is invalid.", code="INVALID_JSON") from None
 
         def handle_request(self):
@@ -444,7 +510,8 @@ def make_server(host, port, store, dist_dir):
                     raise RequestError("Registration is disabled.", 403, "REGISTRATION_DISABLED")
                 if path == "/api/auth/status" and not mutation:
                     return self.send_json({"authenticated": self.user is not None, "user": self.user,
-                                           "registration_enabled": False})
+                                           "registration_enabled": False,
+                                           "show_default_credentials": store.show_default_credentials()})
                 if path == "/api/auth/login" and self.command == "POST":
                     self.check_login_limit()
                     token, user = store.login(self.body())
@@ -482,7 +549,7 @@ def make_server(host, port, store, dist_dir):
                         export_format = query.get("format", ["yml"])[0]
                         if export_format not in ("json", "yml", "yaml"):
                             raise RequestError("The export format must be yml, yaml or json.", code="INVALID_EXPORT_FORMAT")
-                        data = store.export()
+                        data = store.export(save=True)
                         if export_format == "json":
                             return self.send_json(data, filename=f"tdl-{store.today()}.json")
                         return self.send_bytes(dump_yaml(data).encode(), "application/yaml; charset=utf-8",
@@ -492,12 +559,18 @@ def make_server(host, port, store, dist_dir):
                     return self.static(path)
                 if self.command == "POST" and path == "/api/tasks":
                     return self.send_json(store.create(self.body()), 201)
+                if self.command == "POST" and path == "/api/import":
+                    data = self.body(MAX_IMPORT_BYTES * 2 + 1024)
+                    validate_fields(data, {"content"})
+                    return self.send_json(store.import_data(data.get("content")))
                 match = re.fullmatch(r"/api/tasks/(\d+)", path)
                 if self.command == "PATCH" and match:
                     return self.send_json(store.patch(int(match[1]), self.body()))
                 raise RequestError("This method is not allowed.", 405, "METHOD_NOT_ALLOWED")
             except RequestError as error:
                 self.send_json({"error": str(error), "code": error.code}, error.status)
+            except ImportDataError as error:
+                self.send_json({"error": str(error), "code": error.code}, 413 if error.code == "IMPORT_TOO_LARGE" else 400)
             except (sqlite3.DatabaseError, OSError):
                 self.send_json({"error": "Unable to read or save data. Try again later.", "code": "STORAGE_ERROR"}, 500)
 
@@ -543,9 +616,10 @@ def make_server(host, port, store, dist_dir):
 
 
 if __name__ == "__main__":
-    store = Store(os.environ.get("DATA_DIR", "./data"))
+    settings = load_config(os.environ.get("CONFIG_FILE"))
+    store = Store(os.environ.get("DATA_DIR", "./data"), timezone=settings["timezone"])
     server = make_server(os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", "8080")), store,
-                         os.environ.get("DIST_DIR", "./dist"))
+                         os.environ.get("DIST_DIR", "./dist"), secure_cookie=settings["secure_cookies"])
     print(f"TDL running at http://{server.server_address[0]}:{server.server_address[1]}", flush=True)
     try:
         server.serve_forever()

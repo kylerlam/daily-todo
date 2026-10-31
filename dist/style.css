@@ -16,7 +16,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 [hidden] { display: none !important; }
 button:active:not(:disabled) { transform: translateY(1px); }
 .topbar { height: 88px; border-bottom: 1px solid var(--border); background: #fff; display: flex; align-items: center; padding: 0 38px; gap: 26px; position: relative; z-index: 2; }
-.brand { font-size: 29px; line-height: 1; font-weight: 750; letter-spacing: -1px; }
+.brand { display: inline-flex; align-items: center; flex-shrink: 0; }
+.brand img { display: block; width: auto; height: 44px; }
 .tagline { padding-left: 24px; border-left: 1px solid #d7dde3; color: var(--muted); font-size: 14px; line-height: 22px; margin: 0; }
 .topbar > .button { margin-left: auto; }
 .button { min-height: 42px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 17px; background: #fff; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; font-weight: 500; transition: background .15s, border-color .15s; }
@@ -171,7 +172,7 @@ dialog::backdrop { background: #19282055; backdrop-filter: blur(3px); }
 }
 @media (max-width: 700px) {
   .topbar { height: 74px; padding: 0 20px; gap: 14px; }
-  .brand { font-size: 25px; }
+  .brand img { height: 40px; }
   .tagline { padding-left: 14px; font-size: 11px; line-height: 19px; }
   .topbar > .button { font-size: 12px; padding: 10px 12px; min-height: 39px; gap: 5px; }
   .topbar > .button svg { width: 15px; height: 15px; }

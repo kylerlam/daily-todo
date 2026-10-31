@@ -1,0 +1,28 @@
+name: tdl
+services:
+  app:
+    container_name: tdl-app
+    image: tdl:local
+    user: "${TDL_UID:-1000}:${TDL_GID:-1000}"
+    environment:
+      CONFIG_FILE: /app/config/app.toml
+      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-}"
+    ports:
+      - "${TDL_BIND_ADDRESS:-127.0.0.1}:3456:8080"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped

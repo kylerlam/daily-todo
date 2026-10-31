@@ -1,4 +1,6 @@
 /data/
+/daily todo/data/
+/daily todo/config/app.toml
 /docs/
 /backup/
 /backups/
