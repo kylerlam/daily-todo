@@ -46,6 +46,8 @@ const entries = {
   taskTitleLabel: ['What do you want to do?', '¿Qué quieres hacer?', '要做什么', '要做甚麼'],
   taskTitlePlaceholder: ['For example: Read a chapter', 'Por ejemplo: Leer un capítulo', '例如：读完一章书', '例如：讀完一章書'],
   notesLabel: ['Notes', 'Notas', '补充说明', '補充說明'],
+  insertChecklistItem: ['Insert checklist item', 'Insertar elemento de lista', '插入勾选项', '插入勾選項'],
+  checklistItem: ['Checklist item', 'Elemento de lista', '勾选项', '勾選項'],
   optional: ['Optional', 'Opcional', '选填', '選填'],
   notesPlaceholder: ['Details, an address, or a note to yourself…', 'Detalles, una dirección o una nota para ti…', '写下细节、地址，或想留给自己的话…', '寫下細節、地址，或想留給自己的話…'],
   taskDateLabel: ['Task date', 'Fecha asignada', '任务日期', '任務日期'],

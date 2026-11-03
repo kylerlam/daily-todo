@@ -89,6 +89,9 @@ main { width: 100%; min-width: 0; padding: 42px 38px 48px; max-width: 1500px; ma
 .task-copy { flex: 1; min-width: 0; }
 .task-title { font-size: 15px; font-weight: 550; line-height: 1.7; margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .task-notes { font-size: 13px; font-weight: 400; line-height: 1.8; color: #909aa5; margin: 5px 0 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.task-note-line { min-height: 1.8em; }
+.task-note-check { display: flex; align-items: baseline; gap: 8px; }
+.task-note-check input { width: 16px; height: 16px; margin: 0; flex-shrink: 0; accent-color: var(--accent); }
 .task-row.completed .task-title, .task-row.completed .task-notes { text-decoration-line: line-through; text-decoration-thickness: 1px; color: #8b949e; font-weight: 400; }
 .task-meta { display: block; color: #a0a7b0; font-size: 11px; line-height: 1.6; margin-top: 6px; }
 .task-row.discarded .task-title { color: #979fa7; font-weight: 400; }
@@ -137,6 +140,9 @@ dialog::backdrop { background: #19282055; backdrop-filter: blur(3px); }
 .field { display: block; font-size: 14px; font-weight: 550; margin: 0 0 20px; }
 .field input, .field textarea, .field select { display: block; width: 100%; padding: 12px 13px; border: 1px solid #dfe5e1; border-radius: 7px; background: #fff; color: #252a30; font-size: 15px; line-height: 1.7; margin-top: 9px; resize: vertical; }
 .field input::placeholder, .field textarea::placeholder { color: #a7afb6; }
+.notes-tools { margin-top: 8px; }
+.notes-tools .icon-button { width: 36px; min-width: 36px; height: 36px; }
+.notes-field textarea { margin-top: 6px; }
 .optional { font-weight: 400; font-size: 12px; color: #99a2aa; margin-left: 7px; }
 .date-field { margin-bottom: 7px; }
 .date-field input { width: auto; min-width: 200px; max-width: 100%; min-height: 48px; }

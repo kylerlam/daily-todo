@@ -8,6 +8,7 @@ A small personal todo list and calendar, released under the MIT License. The cal
 - You can check off tasks early or after their assigned date. The calendar updates the assigned day's list, and the completion timestamp records when you checked the task off.
 - Change the **Task date** of an unfinished task to move it to another day's list. **Task list** groups unfinished tasks and tasks completed today by their assigned dates. The **Today** group uses today's date.
 - Press and hold a task's three-dot button, then drag the handle to change its priority among unfinished tasks on the same date. With the button focused, use **Alt+↑** or **Alt+↓**.
+- Use the checkbox button above **Notes** to start a checklist. Press **Enter** after an item to add another. Press **Enter** on an empty item to end the checklist.
 - Use **More actions → Delete** to permanently remove a task and its history from the database, calendar, and subsequent exports.
 
 This version provides tasks and a calendar. It does not include recurring habits.

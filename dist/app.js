@@ -8,6 +8,7 @@ import { bindTaskReorder } from './task-reorder.mjs';
 applyTheme();
 
 const $ = (selector) => document.querySelector(selector);
+const checklistPrefix = /^[☐☑] /;
 const icons = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   list: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
@@ -190,7 +191,7 @@ function makeTaskRow(task) {
   check.addEventListener('click', () => mutateTask(task.id, { completed: !task.completed, created_at: task.created_at }, task.completed ? 'taskRestored' : 'taskCompleted'));
   const copy = node('div', 'task-copy');
   copy.append(node('p', 'task-title', task.title));
-  if (task.notes) copy.append(node('p', 'task-notes', task.notes));
+  if (task.notes) copy.append(makeTaskNotes(task, readOnly));
   if (task.discarded) copy.append(node('span', 'task-meta', t('taskDiscardedMeta')));
   row.append(check, copy);
   const actions = node('div', 'row-actions');
@@ -238,6 +239,31 @@ function makeTaskRow(task) {
   actions.append(menuButton, menu);
   row.append(actions);
   return row;
+}
+function makeTaskNotes(task, readOnly) {
+  const lines = task.notes.split('\n');
+  if (!lines.some((line) => checklistPrefix.test(line))) return node('p', 'task-notes', task.notes);
+  const notes = node('div', 'task-notes');
+  lines.forEach((line, index) => {
+    if (!checklistPrefix.test(line)) {
+      notes.append(node('div', 'task-note-line', line));
+      return;
+    }
+    const label = node('label', 'task-note-check');
+    const checkbox = node('input');
+    const text = line.slice(2);
+    checkbox.type = 'checkbox';
+    checkbox.checked = line.startsWith('☑');
+    checkbox.disabled = readOnly || state.busy;
+    if (!text.trim()) checkbox.setAttribute('aria-label', t('checklistItem'));
+    checkbox.addEventListener('change', () => {
+      lines[index] = (checkbox.checked ? '☑' : '☐') + line.slice(1);
+      mutateTask(task.id, { notes: lines.join('\n'), created_at: task.created_at }, 'taskSaved');
+    });
+    label.append(checkbox, node('span', '', text));
+    notes.append(label);
+  });
+  return notes;
 }
 function emptyState(container, past = false) {
   const empty = node('div', 'empty-state');
@@ -359,12 +385,48 @@ function setFormSaving(saving) {
   for (const selector of ['#new-task', '#save-task', '#close-dialog', '#cancel-dialog']) $(selector).disabled = saving;
   $('#task-title').readOnly = saving;
   $('#task-notes').readOnly = saving;
+  $('#insert-checklist-item').disabled = saving;
   $('#task-day').disabled = saving || Boolean(editingTask?.completed);
 }
 function closeMenus() {
   document.querySelectorAll('.task-menu').forEach((menu) => { menu.hidden = true; });
   document.querySelectorAll('.row-menu-button').forEach((button) => button.setAttribute('aria-expanded', 'false'));
 }
+const notesEditor = $('#task-notes');
+function notesLineStart() {
+  return notesEditor.value.slice(0, notesEditor.selectionStart).lastIndexOf('\n') + 1;
+}
+function replaceNotesRange(text, start, end) {
+  if (notesEditor.value.length - (end - start) + text.length > notesEditor.maxLength) return false;
+  notesEditor.setRangeText(text, start, end, 'end');
+  return true;
+}
+$('#insert-checklist-item').addEventListener('click', () => {
+  const start = notesLineStart();
+  const line = notesEditor.value.slice(start).split('\n', 1)[0];
+  const hasCheckbox = checklistPrefix.test(line);
+  const prefixLength = hasCheckbox ? 2 : 0;
+  const caret = notesEditor.selectionStart;
+  if (!line.slice(prefixLength).trim()) {
+    if (hasCheckbox) notesEditor.setSelectionRange(start + prefixLength, start + prefixLength);
+    else replaceNotesRange('☐ ', start, start);
+  } else if (caret <= start + prefixLength) {
+    if (replaceNotesRange('☐ \n', start, start)) notesEditor.setSelectionRange(start + 2, start + 2);
+  } else {
+    replaceNotesRange('\n☐ ', caret, caret);
+  }
+  notesEditor.focus();
+});
+notesEditor.addEventListener('beforeinput', (event) => {
+  if (event.isComposing || !event.cancelable || !['insertLineBreak', 'insertParagraph'].includes(event.inputType)) return;
+  const start = notesLineStart();
+  const line = notesEditor.value.slice(start).split('\n', 1)[0];
+  const end = start + line.length;
+  if (!checklistPrefix.test(line) || notesEditor.selectionStart < start + 2 || notesEditor.selectionEnd > end) return;
+  event.preventDefault();
+  if (line.slice(2).trim()) replaceNotesRange('\n☐ ', notesEditor.selectionStart, notesEditor.selectionEnd);
+  else replaceNotesRange('', start, end);
+});
 $('#task-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (formSaving) return;

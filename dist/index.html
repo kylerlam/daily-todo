@@ -64,7 +64,11 @@
     <form id="task-form">
       <div class="dialog-heading"><h2 id="dialog-title" data-i18n="newTask">New task</h2><button class="icon-button" type="button" id="close-dialog" aria-label="Close" data-i18n-aria-label="closeDialog"><span data-icon="close"></span></button></div>
       <label class="field"><span data-i18n="taskTitleLabel">What would you like to do?</span><input id="task-title" name="title" required maxlength="300" autocomplete="off" placeholder="For example, read a chapter" data-i18n-placeholder="taskTitlePlaceholder"></label>
-      <label class="field"><span data-i18n="notesLabel">Notes</span> <span class="optional" data-i18n="optional">Optional</span><textarea id="task-notes" name="notes" rows="3" maxlength="5000" placeholder="Details, an address, or a note to yourself…" data-i18n-placeholder="notesPlaceholder"></textarea></label>
+      <div class="field notes-field">
+        <label for="task-notes"><span data-i18n="notesLabel">Notes</span> <span class="optional" data-i18n="optional">Optional</span></label>
+        <div class="notes-tools"><button class="icon-button" id="insert-checklist-item" type="button" aria-label="Insert checklist item" title="Insert checklist item" data-i18n-aria-label="insertChecklistItem" data-i18n-title="insertChecklistItem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg></button></div>
+        <textarea id="task-notes" name="notes" rows="3" maxlength="5000" placeholder="Details, an address, or a note to yourself…" data-i18n-placeholder="notesPlaceholder"></textarea>
+      </div>
       <label class="field date-field"><span data-i18n="taskDateLabel">Task date</span><input id="task-day" name="day" type="date" max="9998-12-31" required></label>
       <p class="field-hint" id="date-hint" data-i18n="newDateHint">This task appears on this date in the calendar.</p>
       <p class="form-error" id="form-error" role="alert" hidden></p>
