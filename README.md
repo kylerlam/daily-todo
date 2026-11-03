@@ -4,13 +4,11 @@ A small personal todo list and calendar, released under the MIT License. The cal
 
 ## Tasks and daily history
 
-- Add tasks, edit their notes, and check them off. Completed titles and notes are crossed out. Today's completed tasks remain on the main list; earlier completions are available in the calendar.
-- Select a calendar date to review completed and unfinished tasks. Select the month heading to choose a month and year, or use **Today** to return to the current day.
-- Unfinished tasks carry forward. Completion is recorded on the day you actually check the task off, rather than its scheduled start date.
-- Past dates preserve the text and status at the end of that day. Completing, renaming, or reopening a task later does not rewrite an earlier day's snapshot. Explicitly deleting a task removes its snapshots from every date.
-- If you complete and undo a task on the same day, that day's final status is shown. The underlying events are retained. Past dates cannot be edited or checked off, but tasks can be deleted from them; backdating a completion is not supported.
-- A future start date keeps a task visible as planned work. It cannot be completed before that date.
-- Use **More actions → Delete** for mistaken entries or tasks you no longer want to keep. After confirmation, the task and all its history are permanently removed from the database, calendar, and subsequent exports. Deletion is available for pending, completed, and previously stopped tasks, including in past calendar dates. Previously stopped tasks are retained until you explicitly delete them.
+- The calendar shows each task on its assigned date.
+- You can check off tasks early or after their assigned date. The calendar updates the assigned day's list, and the completion timestamp records when you checked the task off.
+- Change the **Task date** of an unfinished task to move it to another day's list. **Task list** groups unfinished tasks and tasks completed today by their assigned dates. The **Today** group uses today's date.
+- Press and hold a task's three-dot button, then drag the handle to change its priority among unfinished tasks on the same date. With the button focused, use **Alt+↑** or **Alt+↓**.
+- Use **More actions → Delete** to permanently remove a task and its history from the database, calendar, and subsequent exports.
 
 This version provides tasks and a calendar. It does not include recurring habits.
 
@@ -163,7 +161,7 @@ Import merges task history without clearing existing data. An identical export o
 
 ## Long-term storage and recovery
 
-The primary database is `daily todo/data/todo.sqlite3`. While the service runs, SQLite may also create `-wal` and `-shm` files. Tasks, history snapshots, account credentials, and sessions are persisted in this host-mounted directory. The application does not automatically expire task history. Ordinary task changes append history rather than rewriting it; explicitly deleting a task removes that task and all its history in one transaction. Long-term availability still depends on retaining the data and maintaining usable backups.
+The primary database is `daily todo/data/todo.sqlite3`. While the service runs, SQLite may also create `-wal` and `-shm` files. Tasks, priority order, history events, account credentials, and sessions are persisted in this host-mounted directory. The application does not automatically expire task history. Changes to task text, dates, and status append history events. Deleting a task removes that task and all its events in one transaction. Long-term availability depends on retaining the data and maintaining usable backups.
 
 For a complete backup, stop the container, copy the entire `daily todo/data/` directory and retain `daily todo/config/app.toml`, then start the container again. To restore, stop the container, retain a copy of the current data, put the backed-up directory and configuration back at the same mounted paths, and restart to verify them. Do not copy only the main database file while the service is running and omit its WAL. A database backup includes account and session records as well as task history; a YML/JSON export and `daily-todo.yml` do not.
 

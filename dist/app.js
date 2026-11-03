@@ -3,6 +3,7 @@ import { applyTranslations, formatDate, t } from './i18n.mjs';
 import { requireLogin, redirectToLogin, errorMessage } from './auth.mjs';
 import { initSettings } from './settings.mjs';
 import { applyTheme } from './theme.mjs';
+import { bindTaskReorder } from './task-reorder.mjs';
 
 applyTheme();
 
@@ -165,9 +166,11 @@ function selectDate(date) {
   load();
 }
 function taskSort(a, b) {
-  return Number(a.completed || a.discarded) - Number(b.completed || b.discarded) || a.day.localeCompare(b.day) || a.id - b.id;
+  return a.day.localeCompare(b.day) || Number(a.completed || a.discarded) - Number(b.completed || b.discarded) ||
+    (a.position || Number.MAX_SAFE_INTEGER) - (b.position || Number.MAX_SAFE_INTEGER) || a.id - b.id;
 }
-function makeTaskRow(task, readOnly) {
+function makeTaskRow(task) {
+  const readOnly = task.discarded || (task.completed && task.day < state.today && task.completed_at?.slice(0, 10) !== state.today);
   const row = node('article', 'task-row');
   row.dataset.taskId = task.id;
   row.classList.toggle('completed', task.completed);
@@ -177,7 +180,7 @@ function makeTaskRow(task, readOnly) {
   check.setAttribute('role', 'checkbox');
   check.setAttribute('aria-checked', String(task.completed));
   check.setAttribute('aria-label', t(task.completed ? 'undoTaskLabel' : 'completeTaskLabel', { title: task.title }));
-  check.disabled = readOnly || state.busy || task.discarded || task.day > state.today;
+  check.disabled = readOnly || state.busy;
   if (task.completed) check.append(svgElement('check'));
   if (task.discarded) check.append(svgElement('close'));
   check.addEventListener('click', () => mutateTask(task.id, { completed: !task.completed, created_at: task.created_at }, task.completed ? 'taskRestored' : 'taskCompleted'));
@@ -185,8 +188,6 @@ function makeTaskRow(task, readOnly) {
   copy.append(node('p', 'task-title', task.title));
   if (task.notes) copy.append(node('p', 'task-notes', task.notes));
   if (task.discarded) copy.append(node('span', 'task-meta', t('taskDiscardedMeta')));
-  else if (task.day > state.today) copy.append(node('span', 'task-meta', t('taskStarts', { date: dateText(task.day, { month: 'long', day: 'numeric' }) })));
-  else if (!task.completed && task.day < state.selected) copy.append(node('span', 'task-meta', t('taskContinues', { date: dateText(task.day, { month: 'long', day: 'numeric' }) })));
   row.append(check, copy);
   const actions = node('div', 'row-actions');
   const menuButton = node('button', 'icon-button row-menu-button');
@@ -197,7 +198,7 @@ function makeTaskRow(task, readOnly) {
   menuButton.disabled = state.busy;
   const menu = node('div', 'task-menu');
   menu.hidden = true;
-  if (!readOnly && !task.discarded) {
+  if (!readOnly) {
     const edit = node('button', '', t('editTask'));
     edit.type = 'button';
     edit.addEventListener('click', () => { menu.hidden = true; openForm(task); });
@@ -212,6 +213,16 @@ function makeTaskRow(task, readOnly) {
     $('#delete-dialog').showModal();
   });
   menu.append(remove);
+  if (!task.completed && !task.discarded) {
+    bindTaskReorder(row, menuButton, task, async (beforeId) => {
+      const view = state.view;
+      const hadFocus = document.activeElement === menuButton;
+      await mutateTask(task.id, { before_id: beforeId, created_at: task.created_at }, 'taskReordered');
+      if (hadFocus && view === state.view && document.activeElement === document.body) {
+        $(`#${view}-view .task-row[data-task-id="${task.id}"] .row-menu-button`)?.focus({ preventScroll: true });
+      }
+    });
+  }
   menuButton.addEventListener('click', (event) => {
     event.stopPropagation();
     const wasHidden = menu.hidden;
@@ -252,7 +263,7 @@ function renderDay() {
   const past = state.selected < state.today;
   $('#day-footer').textContent = t(past ? 'dayFooterPast' : state.selected > state.today ? 'dayFooterFuture' : 'dayFooterToday');
   if (!state.day.tasks.length) return emptyState(list, past);
-  [...state.day.tasks].sort(taskSort).forEach((task) => list.append(makeTaskRow(task, past || state.selected > state.today)));
+  [...state.day.tasks].sort(taskSort).forEach((task) => list.append(makeTaskRow(task)));
 }
 function renderTasks() {
   if (!state.current) return;
@@ -261,7 +272,22 @@ function renderTasks() {
   const list = $('#all-task-list');
   list.replaceChildren();
   if (!tasks.length) return emptyState(list);
-  [...tasks].sort(taskSort).forEach((task) => list.append(makeTaskRow(task, false)));
+  const sortedTasks = [...tasks].sort((a, b) =>
+    Number(b.day === state.today) - Number(a.day === state.today) || taskSort(a, b));
+  let group;
+  for (const task of sortedTasks) {
+    if (group?.dataset.day !== task.day) {
+      group = node('section', 'task-date-group');
+      group.dataset.day = task.day;
+      const label = task.day === state.today ? t('today') : dateText(task.day, { year: 'numeric', month: 'long', day: 'numeric' });
+      const heading = node('h3', 'task-date-heading', label);
+      heading.id = 'tasks-date-' + task.day;
+      group.setAttribute('aria-labelledby', heading.id);
+      group.append(heading);
+      list.append(group);
+    }
+    group.append(makeTaskRow(task));
+  }
 }
 function render() {
   const calendar = state.view === 'calendar';
@@ -313,8 +339,8 @@ function openForm(task = null) {
   $('#task-title').value = task?.title || '';
   $('#task-notes').value = task?.notes || '';
   $('#task-day').value = task?.day || (state.view === 'calendar' && state.selected > state.today ? state.selected : state.today);
-  $('#task-day').min = state.today;
-  $('#task-day').disabled = Boolean(task);
+  $('#task-day').min = task ? '1900-01-01' : state.today;
+  $('#task-day').disabled = Boolean(task?.completed);
   $('#form-error').hidden = true;
   $('#save-task').disabled = false;
   $('#task-dialog').showModal();
@@ -322,14 +348,14 @@ function openForm(task = null) {
 }
 function updateTaskDialog() {
   $('#dialog-title').textContent = t(editingTask ? 'editTask' : 'newTask');
-  $('#date-hint').textContent = t(editingTask ? 'editDateHint' : 'newDateHint');
+  $('#date-hint').textContent = t(editingTask?.completed ? 'completedDateHint' : editingTask ? 'editDateHint' : 'newDateHint');
 }
 function setFormSaving(saving) {
   formSaving = saving;
   for (const selector of ['#new-task', '#save-task', '#close-dialog', '#cancel-dialog']) $(selector).disabled = saving;
   $('#task-title').readOnly = saving;
   $('#task-notes').readOnly = saving;
-  $('#task-day').disabled = saving || Boolean(editingTask);
+  $('#task-day').disabled = saving || Boolean(editingTask?.completed);
 }
 function closeMenus() {
   document.querySelectorAll('.task-menu').forEach((menu) => { menu.hidden = true; });
@@ -344,7 +370,8 @@ $('#task-form').addEventListener('submit', async (event) => {
   $('#form-error').hidden = true;
   const changes = { title, notes: $('#task-notes').value };
   if (targetTask) changes.created_at = targetTask.created_at;
-  else changes.day = $('#task-day').value;
+  const day = $('#task-day').value;
+  if (!targetTask || (!targetTask.completed && day !== targetTask.day)) changes.day = day;
   setFormSaving(true);
   try {
     const task = await api(targetTask ? '/api/tasks/' + targetTask.id : '/api/tasks', { method: targetTask ? 'PATCH' : 'POST', body: JSON.stringify(changes) });

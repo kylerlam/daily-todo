@@ -29,8 +29,9 @@ class ImportTests(unittest.TestCase):
         return {key: value[key] for key in ("tasks", "events")}
 
     def test_yml_and_json_preserve_non_english_and_literal_strings(self):
-        self.source.create({"title": "学习 / study / estudiar / 學習", "notes":
+        task = self.source.create({"title": "学习 / study / estudiar / 學習", "day": "2026-10-28", "notes":
                             '2026-10-27\ntrue: yes # null\r\nquote " \\ tab\t emoji 🌱\u0085\u2028'})
+        self.source.patch(task["id"], {"completed": True})
         original = self.source.export()
         with closing(self.target.connect()) as db:
             account = tuple(db.execute("SELECT * FROM accounts").fetchone())
@@ -100,9 +101,30 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(self.target.import_data(dump_yaml(older)),
                          {"imported_tasks": 0, "skipped_tasks": 1})
         self.assertEqual(self.rows(self.target), merged)
-        self.assertEqual(self.target.day("2026-10-27")["tasks"][0]["title"], "Read daily")
-        self.assertEqual(self.target.day("2026-10-28")["tasks"][0]["completed_at"],
-                         newer["events"][1]["state_at"])
+        assigned = self.target.day("2026-10-27")["tasks"][0]
+        self.assertEqual(assigned["title"], "Read book")
+        self.assertEqual(assigned["completed_at"], newer["events"][1]["state_at"])
+        self.assertEqual(self.target.day("2026-10-28")["tasks"], [])
+
+    def test_old_export_merges_new_assignment_without_duplication_and_fresh_import_keeps_priority(self):
+        first = self.source.create({"title": "First", "day": "2026-10-29"})
+        second = self.source.create({"title": "Second"})
+        older = dump_yaml(self.source.export())
+        self.target.import_data(older)
+        self.on("2026-10-28")
+        self.source.patch(second["id"], {"completed": True})
+        self.source.patch(second["id"], {"completed": False})
+        self.source.patch(second["id"], {"day": "2026-10-29"})
+        self.source.patch(second["id"], {"before_id": first["id"]})
+        newer = dump_yaml(self.source.export())
+        self.assertEqual(self.target.import_data(newer), {"imported_tasks": 1, "skipped_tasks": 1})
+        self.assertEqual(self.target.import_data(older), {"imported_tasks": 0, "skipped_tasks": 2})
+        self.assertEqual(len(self.target.export()["tasks"]), 2)
+        self.assertEqual(self.target.day("2026-10-27")["tasks"], [])
+        restored = Store(self.target.path.parent / "restored", clock=lambda: self.time, timezone="Asia/Hong_Kong")
+        restored.import_data(newer)
+        self.assertEqual(self.rows(restored), self.rows(self.source))
+        self.assertEqual([task["title"] for task in restored.day("2026-10-29")["tasks"]], ["Second", "First"])
 
     def test_divergent_history_rejects_entire_batch(self):
         self.source.create({"title": "New sibling must not leak"})

@@ -50,7 +50,7 @@
           <form class="quick-add" id="quick-add"><span data-icon="plus"></span><input id="quick-title" aria-label="Quick add a task" data-i18n-aria-label="quickAddLabel" placeholder="One thing you would like to do…" data-i18n-placeholder="quickAddPlaceholder" maxlength="300" required autocomplete="off"><button class="button primary" type="submit" data-i18n="addTask">Add</button></form>
           <div class="list-section-header"><h2 data-i18n="tasksSectionTitle">Your tasks</h2><span id="tasks-summary" aria-live="polite"></span></div>
           <div id="all-task-list" class="task-list"></div>
-          <p class="panel-footer" data-i18n="listFooter">Unfinished tasks carry forward. Find completed tasks in your calendar.</p>
+          <p class="panel-footer" data-i18n="listFooter">Tasks are grouped by date. Find completed tasks in your calendar.</p>
         </div>
       </section>
       <noscript><p class="error-banner">Please enable JavaScript to use Daily.</p></noscript>
@@ -61,8 +61,8 @@
       <div class="dialog-heading"><h2 id="dialog-title" data-i18n="newTask">New task</h2><button class="icon-button" type="button" id="close-dialog" aria-label="Close" data-i18n-aria-label="closeDialog"><span data-icon="close"></span></button></div>
       <label class="field"><span data-i18n="taskTitleLabel">What would you like to do?</span><input id="task-title" name="title" required maxlength="300" autocomplete="off" placeholder="For example, read a chapter" data-i18n-placeholder="taskTitlePlaceholder"></label>
       <label class="field"><span data-i18n="notesLabel">Notes</span> <span class="optional" data-i18n="optional">Optional</span><textarea id="task-notes" name="notes" rows="3" maxlength="5000" placeholder="Details, an address, or a note to yourself…" data-i18n-placeholder="notesPlaceholder"></textarea></label>
-      <label class="field date-field"><span data-i18n="startDateLabel">Start date</span><input id="task-day" name="day" type="date" required></label>
-      <p class="field-hint" id="date-hint" data-i18n="newDateHint">It appears from this day and carries forward until done.</p>
+      <label class="field date-field"><span data-i18n="taskDateLabel">Task date</span><input id="task-day" name="day" type="date" max="9998-12-31" required></label>
+      <p class="field-hint" id="date-hint" data-i18n="newDateHint">This task appears on this date in the calendar.</p>
       <p class="form-error" id="form-error" role="alert" hidden></p>
       <div class="dialog-actions"><button class="button" type="button" id="cancel-dialog" data-i18n="cancel">Cancel</button><button class="button primary" type="submit" id="save-task" data-i18n="saveTask">Save task</button></div>
     </form>

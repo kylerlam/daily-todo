@@ -113,8 +113,9 @@ def read_export(content):
 
 
 def validate_export(value):
-    def fields(item, expected):
-        if not isinstance(item, dict) or set(item) != set(expected.split()):
+    def fields(item, expected, optional=""):
+        required = set(expected.split())
+        if not isinstance(item, dict) or not required <= item.keys() <= required | set(optional.split()):
             raise ImportDataError()
 
     def identifier(value):
@@ -164,8 +165,10 @@ def validate_export(value):
         raise ImportDataError()
     tasks, histories, event_ids = {}, {}, set()
     for task in value["tasks"]:
-        fields(task, "id title notes created_at day")
+        fields(task, "id title notes created_at day", "position")
         identifier(task["id"])
+        if "position" in task:
+            identifier(task["position"])
         if task["id"] in tasks:
             raise ImportDataError()
         text(task)
@@ -174,7 +177,7 @@ def validate_export(value):
         tasks[task["id"]] = task
         histories[task["id"]] = []
     for event in value["events"]:
-        fields(event, "id task_id kind at effective_date state_at title notes")
+        fields(event, "id task_id kind at effective_date state_at title notes", "previous_day")
         identifier(event["id"])
         identifier(event["task_id"])
         if event["id"] in event_ids or event["task_id"] not in tasks or event["kind"] not in ("todo", "complete", "discard"):
@@ -185,8 +188,8 @@ def validate_export(value):
         day(event["effective_date"])
         if state_at > at or event["effective_date"] != event["at"][:10]:
             raise ImportDataError()
-        if event["kind"] == "complete" and tasks[event["task_id"]]["day"] > event["effective_date"]:
-            raise ImportDataError()
+        if "previous_day" in event:
+            day(event["previous_day"])
         histories[event["task_id"]].append(event)
     for task_id, task in tasks.items():
         history = histories[task_id]
@@ -194,7 +197,8 @@ def validate_export(value):
         if not history:
             raise ImportDataError()
         first = history[0]
-        if first["kind"] != "todo" or first["at"] != task["created_at"] or first["state_at"] != first["at"]:
+        if (first["kind"] != "todo" or first["at"] != task["created_at"] or first["state_at"] != first["at"]
+                or "previous_day" in first):
             raise ImportDataError()
         for previous, current in zip(history, history[1:]):
             if timestamp(current["at"]) < timestamp(previous["at"]):
@@ -202,6 +206,14 @@ def validate_export(value):
             expected = current["at"] if current["kind"] != previous["kind"] else previous["state_at"]
             if current["state_at"] != expected:
                 raise ImportDataError()
+            if "previous_day" in current and previous["kind"] != "todo":
+                raise ImportDataError()
+        assigned_day = task["day"]
+        for event in reversed(history):
+            if "previous_day" in event:
+                if event["previous_day"] == assigned_day:
+                    raise ImportDataError()
+                assigned_day = event["previous_day"]
         if (task["title"], task["notes"]) != (history[-1]["title"], history[-1]["notes"]):
             raise ImportDataError()
     return tasks, histories
@@ -216,10 +228,18 @@ def merge_export(db, value):
 
     def identity(task, history):
         first = history[0]
-        return task["created_at"], task["day"], first["title"], first["notes"]
+        original_day = next((item["previous_day"] for item in history if item.get("previous_day")), task["day"])
+        return task["created_at"], original_day, first["title"], first["notes"]
 
-    def events(history):
-        return [{key: val for key, val in item.items() if key not in ("id", "task_id")} for item in history]
+    def events(task, history):
+        # Derive each assignment so two moves from the same day to different days conflict.
+        day = task["day"]
+        states = []
+        for item in reversed(history):
+            states.append({"day": day, **{key: val for key, val in item.items()
+                                          if key not in ("id", "task_id", "previous_day")}})
+            day = item.get("previous_day") or day
+        return states[::-1]
 
     candidates = {}
     for task in existing:
@@ -227,11 +247,11 @@ def merge_export(db, value):
     used, plan, skipped = set(), [], 0
     for task_id, task in tasks.items():
         history = histories[task_id]
-        incoming = events(history)
+        incoming = events(task, history)
         matches = [item for item in candidates.get(identity(task, history), []) if item["id"] not in used]
         chosen = None
         for item in matches:
-            local = events(local_histories[item["id"]])
+            local = events(item, local_histories[item["id"]])
             if incoming[:len(local)] == local or local[:len(incoming)] == incoming:
                 chosen = item, len(local)
                 break
@@ -249,12 +269,16 @@ def merge_export(db, value):
     pending = []
     for task, history, local_id in plan:
         if local_id is None:
-            local_id = db.execute("INSERT INTO tasks(title,notes,created_at,day) VALUES(?,?,?,?)",
-                                  (task["title"], task["notes"], task["created_at"], task["day"])).lastrowid
+            local_id = db.execute("INSERT INTO tasks(title,notes,created_at,day,position) VALUES(?,?,?,?,?)",
+                                  (task["title"], task["notes"], task["created_at"], task["day"],
+                                   task.get("position", 0))).lastrowid
         else:
-            db.execute("UPDATE tasks SET title=?,notes=? WHERE id=?", (task["title"], task["notes"], local_id))
+            db.execute("""UPDATE tasks SET title=?,notes=?,day=?,position=CASE WHEN day=? THEN position ELSE ? END
+                       WHERE id=?""", (task["title"], task["notes"], task["day"], task["day"],
+                                        task.get("position", 0), local_id))
         pending.extend((event, local_id) for event in history)
     for event, local_id in sorted(pending, key=lambda item: item[0]["id"]):
-        db.execute("INSERT INTO events(task_id,kind,at,effective_date,state_at,title,notes) VALUES(?,?,?,?,?,?,?)",
-                   (local_id, *(event[key] for key in ("kind", "at", "effective_date", "state_at", "title", "notes"))))
+        db.execute("INSERT INTO events(task_id,kind,at,effective_date,state_at,title,notes,previous_day) VALUES(?,?,?,?,?,?,?,?)",
+                   (local_id, *(event[key] for key in ("kind", "at", "effective_date", "state_at", "title", "notes")),
+                    event.get("previous_day")))
     return {"imported_tasks": len(plan), "skipped_tasks": skipped}

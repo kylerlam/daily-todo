@@ -32,6 +32,7 @@ else:
 MAX_BODY = 32768
 PASSWORD_ITERATIONS = 600000
 SESSION_SECONDS = 30 * 24 * 60 * 60
+TASK_PATCH_FIELDS = {"title", "notes", "completed", "discarded", "day", "before_id", "created_at"}
 
 
 def load_config(path=None):
@@ -149,8 +150,10 @@ class Store:
                     title TEXT NOT NULL,
                     notes TEXT NOT NULL,
                     created_at TEXT NOT NULL,
-                    day TEXT NOT NULL
+                    day TEXT NOT NULL,
+                    position INTEGER NOT NULL DEFAULT 0
                 );
+                CREATE INDEX IF NOT EXISTS tasks_day ON tasks(day);
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY,
                     task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE RESTRICT,
@@ -159,7 +162,8 @@ class Store:
                     effective_date TEXT NOT NULL,
                     state_at TEXT NOT NULL,
                     title TEXT NOT NULL,
-                    notes TEXT NOT NULL
+                    notes TEXT NOT NULL,
+                    previous_day TEXT
                 );
                 CREATE INDEX IF NOT EXISTS events_task_date ON events(task_id, effective_date, id);
                 CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events
@@ -178,6 +182,11 @@ class Store:
                     expires_at INTEGER NOT NULL
                 );
             """)
+            db.execute("BEGIN IMMEDIATE")
+            if "position" not in {row["name"] for row in db.execute("PRAGMA table_info(tasks)")}:
+                db.execute("ALTER TABLE tasks ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+            if "previous_day" not in {row["name"] for row in db.execute("PRAGMA table_info(events)")}:
+                db.execute("ALTER TABLE events ADD COLUMN previous_day TEXT")
             columns = {row["name"] for row in db.execute("PRAGMA table_info(accounts)")}
             if "password_changed" not in columns:
                 db.execute("ALTER TABLE accounts ADD COLUMN password_changed INTEGER NOT NULL DEFAULT 0")
@@ -260,17 +269,17 @@ class Store:
             db.execute("DELETE FROM sessions")
 
     @staticmethod
-    def append_event(db, task_id, kind, now, state_at, title, notes):
+    def append_event(db, task_id, kind, now, state_at, title, notes, previous_day=None):
         db.execute(
-            "INSERT INTO events(task_id,kind,at,effective_date,state_at,title,notes) VALUES(?,?,?,?,?,?,?)",
-            (task_id, kind, now, now[:10], state_at, title, notes),
+            "INSERT INTO events(task_id,kind,at,effective_date,state_at,title,notes,previous_day) VALUES(?,?,?,?,?,?,?,?)",
+            (task_id, kind, now, now[:10], state_at, title, notes, previous_day),
         )
 
     @staticmethod
     def task(row):
         return {
             "id": row["id"], "title": row["title"], "notes": row["notes"],
-            "created_at": row["created_at"], "day": row["day"],
+            "created_at": row["created_at"], "day": row["day"], "position": row["position"],
             "completed": row["kind"] == "complete",
             "completed_at": row["state_at"] if row["kind"] == "complete" else None,
             "discarded": row["kind"] == "discard",
@@ -303,31 +312,53 @@ class Store:
             return self.task(self.latest(db, task_id))
 
     def patch(self, task_id, data):
-        validate_fields(data, {"title", "notes", "completed", "discarded", "created_at"})
+        validate_fields(data, TASK_PATCH_FIELDS)
         if not data.keys() - {"created_at"}:
             raise RequestError("Provide at least one change.", code="EMPTY_UPDATE")
         if "completed" in data and "discarded" in data:
             raise RequestError("Change only one task status at a time.", code="CONFLICTING_STATUS")
+        if "before_id" in data:
+            before_id = data["before_id"]
+            if data.keys() - {"before_id", "created_at"} or (
+                    before_id is not None and (type(before_id) is not int or not 0 < before_id < 2 ** 63)):
+                raise RequestError("Provide a valid task order change.", code="INVALID_TASK_ORDER")
         with closing(self.connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             now = self.now()
             old = self.latest(db, task_id)
             if "created_at" in data and old["created_at"] != data["created_at"]:
                 raise RequestError("The task has changed. Refresh before changing it.", 409, "TASK_CHANGED")
+            if "before_id" in data:
+                self.reorder(db, old, before_id)
+                return self.task(self.latest(db, task_id))
             title = data.get("title", old["title"]).strip()
             notes = data.get("notes", old["notes"])
+            day = valid_date(data["day"]) if "day" in data else old["day"]
+            moved = day != old["day"]
             kind = old["kind"]
+            if moved and kind != "todo":
+                raise RequestError("Only unfinished tasks can be rescheduled.", code="TASK_DATE_LOCKED")
             if "completed" in data:
                 kind = "complete" if data["completed"] else "todo"
             if "discarded" in data:
                 kind = "discard" if data["discarded"] else "todo"
-            if kind == "complete" and old["day"] > now[:10]:
-                raise RequestError("A task cannot be completed before its scheduled day.", code="FUTURE_COMPLETION")
-            if (title, notes, kind) != (old["title"], old["notes"], old["kind"]):
+            if moved or (title, notes, kind) != (old["title"], old["notes"], old["kind"]):
                 state_at = now if kind != old["kind"] else old["state_at"]
-                db.execute("UPDATE tasks SET title=?, notes=? WHERE id=?", (title, notes, task_id))
-                self.append_event(db, task_id, kind, now, state_at, title, notes)
+                db.execute("UPDATE tasks SET title=?, notes=?, day=?, position=? WHERE id=?",
+                           (title, notes, day, 0 if moved else old["position"], task_id))
+                self.append_event(db, task_id, kind, now, state_at, title, notes, old["day"] if moved else None)
             return self.task(self.latest(db, task_id))
+
+    def reorder(self, db, task, before_id):
+        pending = [row["id"] for row in self.rows_on(db, task["day"]) if row["kind"] == "todo"]
+        if task["id"] not in pending or (before_id is not None and before_id not in pending):
+            raise RequestError("Reorder unfinished tasks within the same date.", code="INVALID_TASK_ORDER")
+        if before_id == task["id"]:
+            return
+        pending.remove(task["id"])
+        index = len(pending) if before_id is None else pending.index(before_id)
+        pending.insert(index, task["id"])
+        db.executemany("UPDATE tasks SET position=? WHERE id=?", enumerate(pending, 1))
 
     def delete(self, task_id, expected_created_at=None):
         with closing(self.connect()) as db, db:
@@ -340,15 +371,14 @@ class Store:
 
     def rows_on(self, db, selected):
         return db.execute("""
-            SELECT t.id, t.created_at, t.day, e.title, e.notes, e.kind, e.state_at
+            SELECT t.*, e.kind, e.state_at
             FROM tasks t JOIN events e ON e.id = (
-                SELECT MAX(id) FROM events WHERE task_id=t.id AND effective_date <= ?
-            ) WHERE t.day <= ? ORDER BY t.day, t.id
-        """, (selected, selected)).fetchall()
+                SELECT MAX(id) FROM events WHERE task_id=t.id
+            ) WHERE t.day = ? ORDER BY t.position = 0, t.position, t.id
+        """, (selected,)).fetchall()
 
     def day_payload(self, db, selected, today):
-        tasks = [self.task(row) for row in self.rows_on(db, selected)
-                 if row["kind"] == "todo" or row["state_at"][:10] == selected]
+        tasks = [self.task(row) for row in self.rows_on(db, selected)]
         return self.envelope(selected, today, tasks)
 
     @staticmethod
@@ -369,7 +399,7 @@ class Store:
         with closing(self.connect()) as db, db:
             rows = db.execute("""
                 SELECT t.*, e.kind, e.state_at FROM tasks t JOIN events e ON e.id =
-                    (SELECT MAX(id) FROM events WHERE task_id=t.id) ORDER BY t.day, t.id
+                    (SELECT MAX(id) FROM events WHERE task_id=t.id) ORDER BY t.day, t.position = 0, t.position, t.id
             """).fetchall()
             tasks = [self.task(row) for row in rows if row["kind"] == "todo"
                      or (row["kind"] == "complete" and row["state_at"][:10] == today)]
@@ -399,8 +429,10 @@ class Store:
             db.execute("BEGIN")
             value = {"format": "tdl-export", "version": 1, "timezone": str(self.zone),
                     "exported_at": self.now(),
-                    "tasks": [dict(row) for row in db.execute("SELECT * FROM tasks ORDER BY id")],
-                    "events": [dict(row) for row in db.execute("SELECT * FROM events ORDER BY id")]}
+                    "tasks": [{key: val for key, val in dict(row).items() if key != "position" or val}
+                              for row in db.execute("SELECT * FROM tasks ORDER BY id")],
+                    "events": [{key: val for key, val in dict(row).items() if val is not None}
+                               for row in db.execute("SELECT * FROM events ORDER BY id")]}
         if save:
             temporary = None
             try:
@@ -576,7 +608,7 @@ def make_server(host, port, store, dist_dir, secure_cookie=None):
                 match = re.fullmatch(r"/api/tasks/(\d+)", path)
                 if self.command == "PATCH" and match:
                     data = self.body()
-                    validate_fields(data, {"title", "notes", "completed", "discarded", "created_at"})
+                    validate_fields(data, TASK_PATCH_FIELDS)
                     if not isinstance(data.get("created_at"), str) or not data["created_at"]:
                         raise RequestError("The task has changed. Refresh before changing it.", 409, "TASK_CHANGED")
                     return self.send_json(store.patch(int(match[1]), data))
