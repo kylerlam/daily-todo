@@ -1,8 +1,8 @@
 # Daily Todo — Browser Demo
 
-This `codex/browser-demo` branch is a standalone, static demo of Daily Todo. Open it and try the task list and calendar without signing in. The fictional examples and your changes stay in your browser’s localStorage. Visitors do not share a database.
+This `codex/demo` branch is a standalone, static demo of Daily Todo. Open it and try the task list and calendar without signing in. Demo changes stay in your browser’s localStorage until the next Hong Kong calendar day.
 
-The demo is based on committed version `ddf98ad` of the production application. The production version remains on `main`. The public demo is available at **[daily-todo-demo.pages.dev](https://daily-todo-demo.pages.dev/)** on Cloudflare Pages. It is separate from the NAS-hosted production application.
+The demo includes the production features through `2a234f2` on `main`. The public demo is available on Cloudflare Pages. [daily-todo-demo.pages.dev](https://daily-todo-demo.pages.dev/)
 
 ## Try the demo locally
 
@@ -16,9 +16,9 @@ Open [http://127.0.0.1:4173](http://127.0.0.1:4173). Python here is only a conve
 
 ## What you can try
 
-- Create and edit tasks and notes, complete or reopen them, and stop tasks you no longer plan to do.
-- Select dates, change months, and return to Today. Unfinished tasks carry forward; past days preserve their historical text and status. Future tasks cannot be completed early. Date boundaries use `Asia/Hong_Kong`.
-- Reload the page to keep changes in the same browser. Use **Reset sample data** to replace this demo’s tasks and history with fresh examples. Reset requires confirmation and only overwrites `daily-todo-demo-v1`; other localStorage entries and appearance preferences are left alone.
+- Create, reschedule, complete, reorder, and delete tasks. Insert and toggle checkboxes in notes.
+- Select dates, change months, and return to Today. The four samples show an overdue task, a completed task today, an unfinished task today, and an upcoming task. The calendar shows each task on its assigned date, including tasks completed early.
+- Reload the page to keep changes on the same day. After midnight Hong Kong time, the demo restores four fresh examples the next time it runs. Use **Reset sample data** to do this immediately. The reset replaces only demo tasks and history.
 - Switch between four languages and ten themes in Settings. There is no account, password change, or sign-out in the demo.
 - Export the browser’s demo tasks and history as JSON or YML. YML uses JSON-compatible YAML 1.2 syntax. Export reads local data and uses the existing save picker/download flow. This branch has no import interface.
 
@@ -28,7 +28,7 @@ Open [http://127.0.0.1:4173](http://127.0.0.1:4173). Python here is only a conve
 
 Storage belongs to a browser profile and site origin (scheme, hostname, and port). Tabs at the same origin share demo data; separate profiles, devices, and origins do not sync. Clearing site data, using private browsing, or changing the demo URL can remove or separate the data. Browser storage has a quota and is not a backup or a protected account. Avoid entering private information into a public demo, and export anything you want to retain.
 
-If storage is blocked or full, the app reports that changes were not saved. Invalid saved data is preserved until you explicitly reset the samples. There is no network fallback. A reset does not repair browser storage permissions.
+If storage is blocked or full, the app reports that changes were not saved. Previous or unreadable demo data is replaced with fresh examples when storage is available.
 
 The backend, Docker files, and their tests remain in the repository as production reference code. **Do not run `backend/server.py`, Docker Compose, or publish the repository root for this demo.** Deploy only `dist/`, on a separate static origin without proxying `/api` to the production service. Runtime databases, accounts, sessions, `.env`, private `docs/`, exports, and backups are excluded from Git and from the static deployment directory.
 
@@ -36,14 +36,12 @@ The backend, Docker files, and their tests remain in the repository as productio
 
 - **Public URL:** [https://daily-todo-demo.pages.dev/](https://daily-todo-demo.pages.dev/).
 - **Pages project:** `daily-todo-demo`.
-- **Deployment method:** dashboard Direct Upload, production environment, using only the 11 static files from `dist/`. No build command, environment variables, secrets, Functions, Workers, or database are required.
-- **Source:** `codex/browser-demo`; the deployed assets were uploaded from commit `9baf40eb58306c2ed23977504aad12241d257fb3`. Later documentation-only commits leave those assets unchanged.
+- **Deployment method:** dashboard Direct Upload in the production environment, using only the static files from `dist/`.
+- **Source branch:** `codex/demo`.
 
 Direct Upload is manual: pushing this Git branch does **not** automatically update the public demo. To publish an update, check out the intended demo commit, verify that `dist/` contains only the static demo assets, then use **Pages → daily-todo-demo → Create deployment → Production** and upload the contents of `dist/` (or a ZIP with `index.html` at its root). Never upload the repository root, backend, runtime data, or private configuration.
 
 The dashboard labels the Direct Upload production source as `main`; no Git repository is connected, and this label does not deploy the repository’s production branch. The uploaded file contents, rather than that label, identify this demo’s source. Automatic Git deployments would require a separate Git-integrated Pages project; see Cloudflare’s [Direct Upload guide](https://developers.cloudflare.com/pages/get-started/direct-upload/).
-
-Public HTTPS verification confirmed that all 11 hosted assets exactly match the committed `dist/` files. Create/edit/complete, calendar history, reload persistence, and reset were tested, with no `/api` requests or browser console errors. Repeat those checks after future uploads. Browser storage is specific to the demo URL and is not shared with the NAS production application.
 
 ## Development checks
 
@@ -56,6 +54,6 @@ for file in dist/*.mjs; do node --check "$file"; done
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 ```
 
-Demo tests exercise event-based history, validation, browser storage isolation and failure handling, and local export ordering/cancellation. Python tests use temporary databases and loopback servers and continue checking the retained production backend; passing them does not imply that a backend is running in the demo. Browser validation should use a static server serving only `dist/`, with network requests and console errors monitored.
+Demo tests cover the Hong Kong midnight reset, same-day persistence, date and task status updates, storage isolation, and local exports. Python tests check the retained production backend with temporary databases and loopback servers.
 
 Released under the MIT License. The calendar and list layout takes inspiration from [HabitTrove](https://github.com/dohsimpson/HabitTrove); this application’s code is independently implemented.

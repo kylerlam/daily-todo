@@ -1,5 +1,5 @@
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.client import HTTPConnection
 import json
 from pathlib import Path
@@ -22,33 +22,38 @@ class StoreTests(unittest.TestCase):
     def on(self, day):
         self.time = datetime.fromisoformat(day + "T10:00:00+08:00")
 
-    def test_pending_carries_until_completion_and_history_keeps_earlier_day(self):
+    def test_pending_and_late_completion_stay_on_assigned_day(self):
         task = self.store.create({"title": "学习", "notes": "三小时"})
+        month = self.store.month("2026-10")["days"]
+        self.assertEqual([day["date"] for day in month if day["pending"]], ["2026-10-29"])
         self.on("2026-10-30")
-        self.assertEqual(self.store.day("2026-10-30")["summary"]["pending"], 1)
+        self.assertEqual(self.store.day("2026-10-30")["tasks"], [])
+        self.assertEqual(self.store.current()["tasks"], [task])
         done = self.store.patch(task["id"], {"completed": True})
         self.assertTrue(done["completed"])
-        self.assertEqual(self.store.day("2026-10-29")["summary"], {"total": 1, "completed": 0, "pending": 1})
-        self.assertEqual(self.store.day("2026-10-30")["summary"], {"total": 1, "completed": 1, "pending": 0})
+        self.assertEqual(self.store.day("2026-10-29")["summary"], {"total": 1, "completed": 1, "pending": 0})
+        self.assertEqual(self.store.day("2026-10-30")["tasks"], [])
+        self.assertEqual(self.store.current()["tasks"], [done])
         self.on("2026-10-31")
         self.assertEqual(self.store.day("2026-10-31")["tasks"], [])
         self.assertEqual(self.store.current()["tasks"], [])
         reopened = Store(self.directory.name, clock=lambda: self.time, timezone="Asia/Hong_Kong")
-        self.assertEqual(reopened.day("2026-10-30")["tasks"][0]["completed_at"], done["completed_at"])
+        self.assertEqual(reopened.day("2026-10-29")["tasks"], [done])
 
-    def test_later_undo_and_second_completion_do_not_rewrite_old_completion(self):
+    def test_later_undo_and_second_completion_update_assigned_day_but_keep_events(self):
         task = self.store.create({"title": "跑步"})
         first = self.store.patch(task["id"], {"completed": True})
         self.on("2026-10-30")
         self.store.patch(task["id"], {"completed": False})
-        self.assertEqual(self.store.day("2026-10-29")["tasks"][0]["completed_at"], first["completed_at"])
-        self.assertFalse(self.store.day("2026-10-30")["tasks"][0]["completed"])
+        self.assertFalse(self.store.day("2026-10-29")["tasks"][0]["completed"])
+        self.assertEqual(self.store.day("2026-10-30")["tasks"], [])
         self.on("2026-10-31")
         second = self.store.patch(task["id"], {"completed": True})
         self.assertNotEqual(first["completed_at"], second["completed_at"])
-        self.assertEqual(self.store.day("2026-10-30")["summary"]["pending"], 1)
-        self.assertEqual(self.store.day("2026-10-29")["summary"]["completed"], 1)
-        self.assertEqual(len(self.store.export()["events"]), 4)
+        self.assertEqual(self.store.day("2026-10-29")["tasks"], [second])
+        events = self.store.export()["events"]
+        self.assertEqual(len(events), 4)
+        self.assertEqual(events[1]["state_at"], first["completed_at"])
 
     def test_same_day_undo_uses_day_end_state_and_keeps_events(self):
         task = self.store.create({"title": "任务"})
@@ -58,42 +63,134 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(self.store.day("2026-10-29")["summary"], {"total": 1, "completed": 0, "pending": 1})
         self.assertEqual([e["kind"] for e in self.store.export()["events"]], ["todo", "complete", "todo"])
 
-    def test_edit_snapshot_preserves_past_title_and_original_completion_date(self):
+    def test_edit_updates_assigned_day_and_preserves_original_completion_date(self):
         task = self.store.create({"title": "旧标题", "notes": "旧备注"})
         done = self.store.patch(task["id"], {"completed": True})
         self.on("2026-10-30")
         edited = self.store.patch(task["id"], {"title": "新标题", "notes": "新备注"})
-        previous = self.store.day("2026-10-29")["tasks"][0]
-        self.assertEqual((previous["title"], previous["notes"]), ("旧标题", "旧备注"))
+        self.assertEqual(self.store.day("2026-10-29")["tasks"], [edited])
         self.assertEqual(edited["completed_at"], done["completed_at"])
         self.assertEqual(self.store.day("2026-10-30")["tasks"], [])
 
-    def test_discard_keeps_past_pending_and_does_not_count_as_done(self):
+    def test_discard_stays_on_assigned_day_and_does_not_count_as_done(self):
         task = self.store.create({"title": "暂时做不了"})
         self.on("2026-10-30")
         self.store.patch(task["id"], {"discarded": True})
-        discarded = self.store.day("2026-10-30")
+        discarded = self.store.day("2026-10-29")
         self.assertTrue(discarded["tasks"][0]["discarded"])
         self.assertEqual(discarded["summary"], {"total": 1, "completed": 0, "pending": 0})
-        self.assertEqual(self.store.day("2026-10-29")["summary"]["pending"], 1)
+        self.assertEqual(self.store.day("2026-10-30")["tasks"], [])
         self.on("2026-10-31")
         self.assertEqual(self.store.day("2026-10-31")["tasks"], [])
         self.store.patch(task["id"], {"discarded": False})
-        self.assertEqual(self.store.day("2026-10-31")["summary"]["pending"], 1)
+        self.assertEqual(self.store.day("2026-10-29")["summary"]["pending"], 1)
+
+    def test_delete_removes_task_and_history_but_preserves_other_tasks(self):
+        task = self.store.create({"title": "临时想法", "notes": "无需执行"})
+        kept = self.store.create({"title": "仍然要做"})
+        self.store.patch(task["id"], {"completed": True})
+        self.on("2026-10-30")
+        self.store.patch(task["id"], {"discarded": True})
+        before = self.store.export()
+        self.store.delete(task["id"])
+        after = self.store.export()
+        self.assertEqual(after["tasks"], [row for row in before["tasks"] if row["id"] == kept["id"]])
+        self.assertEqual(after["events"], [row for row in before["events"] if row["task_id"] == kept["id"]])
+        self.assertEqual(self.store.day("2026-10-29")["tasks"], [kept])
+        self.assertEqual(self.store.day("2026-10-30")["tasks"], [])
+        self.assertEqual([row["id"] for row in self.store.current()["tasks"]], [kept["id"]])
+        self.assertEqual(self.store.month("2026-10")["days"][28]["completed"], 0)
+        with closing(self.store.connect()) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM tasks WHERE id=?", (task["id"],)).fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM events WHERE task_id=?", (task["id"],)).fetchone()[0], 0)
+            self.assertEqual(db.execute("PRAGMA foreign_key_check").fetchall(), [])
+        restarted = Store(self.directory.name, clock=lambda: self.time, timezone="Asia/Hong_Kong")
+        self.assertEqual(restarted.export()["tasks"], after["tasks"])
+        with self.assertRaises(RequestError) as missing:
+            restarted.delete(task["id"])
+        self.assertEqual((missing.exception.status, missing.exception.code), (404, "NOT_FOUND"))
+
+    def test_startup_migrates_legacy_schema_without_changing_records(self):
+        task = self.store.create({"title": "旧版任务"})
+        self.store.patch(task["id"], {"discarded": True})
+        before = self.store.export()
+        with closing(self.store.connect()) as db, db:
+            db.executescript("""
+                ALTER TABLE tasks DROP COLUMN position;
+                ALTER TABLE events DROP COLUMN previous_day;
+                CREATE TRIGGER events_no_delete BEFORE DELETE ON events
+                    BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
+            """)
+            with self.assertRaises(sqlite3.IntegrityError):
+                db.execute("DELETE FROM events WHERE task_id=?", (task["id"],))
+        restarted = Store(self.directory.name, clock=lambda: self.time, timezone="Asia/Hong_Kong")
+        self.assertEqual(restarted.export()["tasks"], before["tasks"])
+        self.assertEqual(restarted.export()["events"], before["events"])
+        restarted.delete(task["id"])
+        self.assertEqual(restarted.export()["tasks"], [])
+        self.assertEqual(restarted.export()["events"], [])
+
+    def test_delete_failure_rolls_back_task_and_history_together(self):
+        task = self.store.create({"title": "删除失败时保留"})
+        self.store.patch(task["id"], {"completed": True})
+        before = self.store.export()
+        with closing(self.store.connect()) as db, db:
+            db.executescript("""
+                CREATE TRIGGER fail_task_delete BEFORE DELETE ON tasks
+                    BEGIN SELECT RAISE(ABORT, 'simulated failure'); END;
+            """)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.store.delete(task["id"])
+        self.assertEqual(self.store.export()["tasks"], before["tasks"])
+        self.assertEqual(self.store.export()["events"], before["events"])
 
     def test_future_schedule_backdated_creation_and_timezone(self):
         future = self.store.create({"title": "明天", "day": "2026-10-30"})
         self.assertEqual(self.store.day("2026-10-29")["tasks"], [])
         self.assertEqual(self.store.current()["tasks"][0]["id"], future["id"])
-        with self.assertRaises(RequestError):
-            self.store.patch(future["id"], {"completed": True})
-        self.assertEqual(len(self.store.export()["events"]), 1)
+        done = self.store.patch(future["id"], {"completed": True})
+        self.assertEqual(done["completed_at"], self.time.isoformat(timespec="microseconds"))
+        self.assertEqual(self.store.current()["tasks"], [done])
+        self.assertEqual(self.store.day("2026-10-29")["tasks"], [])
+        self.assertEqual(self.store.day("2026-10-30")["tasks"], [done])
+        self.assertEqual(self.store.month("2026-10")["days"][29]["completed"], 1)
         self.store.create({"title": "今天补录旧安排", "day": "2026-10-01"})
+        self.assertEqual(self.store.day("2026-10-01")["summary"]["pending"], 1)
         self.assertEqual(self.store.day("2026-10-28")["tasks"], [])
         self.time = datetime(2026, 10, 29, 16, 1, tzinfo=timezone.utc)
         self.assertEqual(self.store.today(), "2026-10-30")
-        self.store.patch(future["id"], {"completed": True})
+        self.assertNotIn(done, self.store.current()["tasks"])
         self.assertEqual(self.store.day("2026-10-30")["summary"]["completed"], 1)
+
+    def test_reschedule_moves_task_and_calendar_summary_to_new_date(self):
+        task = self.store.create({"title": "延期"})
+        self.on("2026-10-30")
+        moved = self.store.patch(task["id"], {"day": "2026-11-01"})
+        self.assertEqual(moved["created_at"], task["created_at"])
+        self.assertEqual(self.store.month("2026-10")["days"][28]["total"], 0)
+        self.assertEqual(self.store.month("2026-11")["days"][0]["pending"], 1)
+        self.assertEqual(self.store.day("2026-11-01")["tasks"], [moved])
+        self.store.patch(task["id"], {"day": "2026-10-27"})
+        done = self.store.patch(task["id"], {"completed": True})
+        self.assertEqual(self.store.day("2026-10-27")["tasks"], [done])
+        with self.assertRaises(RequestError) as locked:
+            self.store.patch(task["id"], {"day": "2026-10-26"})
+        self.assertEqual(locked.exception.code, "TASK_DATE_LOCKED")
+
+    def test_reorder_same_day_pending_tasks_persists_and_rejects_other_dates(self):
+        first = self.store.create({"title": "第一"})
+        second = self.store.create({"title": "第二"})
+        third = self.store.create({"title": "第三"})
+        other = self.store.create({"title": "明天", "day": "2026-10-30"})
+        self.store.patch(third["id"], {"before_id": first["id"]})
+        self.store.patch(first["id"], {"before_id": None})
+        with self.assertRaises(RequestError) as cross_day:
+            self.store.patch(first["id"], {"before_id": other["id"]})
+        self.assertEqual(cross_day.exception.code, "INVALID_TASK_ORDER")
+        restarted = Store(self.directory.name, clock=lambda: self.time, timezone="Asia/Hong_Kong")
+        expected = [task["id"] for task in (third, second, first)]
+        self.assertEqual([task["id"] for task in restarted.day("2026-10-29")["tasks"]], expected)
+        self.assertEqual([task["id"] for task in restarted.current()["tasks"]], [*expected, other["id"]])
 
     def test_month_summaries_match_each_day_including_leap_year(self):
         self.on("2024-02-27")
@@ -118,7 +215,7 @@ class StoreTests(unittest.TestCase):
                 self.store.create({"title": "必须回滚"})
         self.assertEqual(self.store.export()["tasks"], [])
         task = self.store.create({"title": "原样"})
-        for value in ({}, {"completed": 1}, {"discarded": "yes"}, {"day": "2026-10-30"},
+        for value in ({}, {"completed": 1}, {"discarded": "yes"}, {"day": "2026-02-30"}, {"before_id": True},
                       {"completed": True, "discarded": False}):
             with self.subTest(value=value), self.assertRaises(RequestError):
                 self.store.patch(task["id"], value)
@@ -133,13 +230,11 @@ class StoreTests(unittest.TestCase):
             with self.assertRaises(RequestError):
                 self.store.month(value)
 
-    def test_history_is_append_only_in_database(self):
+    def test_history_cannot_be_overwritten_in_database(self):
         self.store.create({"title": "不可覆盖"})
         with closing(self.store.connect()) as db, db:
             with self.assertRaises(sqlite3.IntegrityError):
                 db.execute("UPDATE events SET kind='complete'")
-            with self.assertRaises(sqlite3.IntegrityError):
-                db.execute("DELETE FROM events")
 
 
 class HttpTests(unittest.TestCase):
@@ -178,14 +273,21 @@ class HttpTests(unittest.TestCase):
             connection.close()
 
     def test_api_create_patch_day_month_export_and_static(self):
-        status, _, body = self.request("POST", "/api/tasks", {"title": "中文任务"})
+        now = self.store.clock()
+        self.store.clock = lambda: now
+        today = self.store.today()
+        scheduled = (datetime.fromisoformat(today).date() + timedelta(days=1)).isoformat()
+        status, _, body = self.request("POST", "/api/tasks", {"title": "中文任务", "day": scheduled})
         self.assertEqual(status, 201)
         task = json.loads(body)
-        status, _, body = self.request("PATCH", f'/api/tasks/{task["id"]}', {"completed": True})
+        status, _, body = self.request("PATCH", f'/api/tasks/{task["id"]}',
+                                       {"completed": True, "created_at": task["created_at"]})
         self.assertEqual(status, 200)
-        self.assertTrue(json.loads(body)["completed"])
-        today = self.store.today()
-        for path in ("/api/tasks", f"/api/day?date={today}"):
+        completed = json.loads(body)
+        self.assertTrue(completed["completed"])
+        self.assertEqual(completed["day"], scheduled)
+        self.assertEqual(completed["completed_at"][:10], today)
+        for path in ("/api/tasks", f"/api/day?date={scheduled}"):
             status, _, body = self.request("GET", path)
             self.assertEqual(status, 200)
             self.assertEqual(json.loads(body)["summary"]["completed"], 1)
@@ -200,6 +302,77 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/health")[0], 200)
         self.assertEqual(self.request("GET", "/calendar/2026-10-30")[2], b"<main>Todo</main>")
         self.assertEqual(self.request("HEAD", "/")[2], b"")
+
+    def test_delete_requires_sign_in_and_same_origin_and_removes_exported_history(self):
+        task = self.store.create({"title": "删除这个临时想法"})
+        self.store.patch(task["id"], {"completed": True})
+        path = f'/api/tasks/{task["id"]}'
+        data = {"created_at": task["created_at"]}
+        for headers, expected in (({"Cookie": ""}, 401),
+                                  ({"Origin": "https://another.example"}, 403),
+                                  ({"Content-Type": "text/plain"}, 415)):
+            with self.subTest(headers=headers):
+                self.assertEqual(self.request("DELETE", path, data, headers=headers)[0], expected)
+                self.assertEqual(len(self.store.export()["events"]), 2)
+        for invalid in ({}, {"created_at": None}, {"created_at": ""}, {**data, "extra": True}):
+            self.assertEqual(self.request("DELETE", path, invalid)[0], 400)
+        status, _, body = self.request("DELETE", path, data)
+        self.assertEqual((status, json.loads(body)), (200, {"ok": True}))
+        self.assertEqual(self.request("DELETE", path, data)[0], 404)
+        status, _, body = self.request("GET", "/api/export?format=json")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["tasks"], [])
+        self.assertEqual(json.loads(body)["events"], [])
+        self.assertNotIn(task["title"], (self.store.path.parent / "daily-todo.yml").read_text())
+
+    def test_stale_delete_cannot_remove_new_task_with_reused_id(self):
+        original = self.store.create({"title": "旧的临时想法"})
+        path = f'/api/tasks/{original["id"]}'
+        data = {"created_at": original["created_at"]}
+        self.assertEqual(self.request("DELETE", path, data)[0], 200)
+        replacement = self.store.create({"title": "后来新建的任务"})
+        self.assertEqual(replacement["id"], original["id"])
+        self.assertNotEqual(replacement["created_at"], original["created_at"])
+        status, _, body = self.request("DELETE", path, data)
+        self.assertEqual((status, json.loads(body)["code"]), (409, "TASK_CHANGED"))
+        self.assertEqual(self.store.current()["tasks"], [replacement])
+        self.assertEqual(len(self.store.export()["events"]), 1)
+        self.assertEqual(self.request("DELETE", path, {"created_at": replacement["created_at"]})[0], 200)
+
+    def test_stale_patch_cannot_modify_new_task_with_reused_id(self):
+        original = self.store.create({"title": "旧的临时想法"})
+        self.store.delete(original["id"], original["created_at"])
+        replacement = self.store.create({"title": "后来新建的任务"})
+        self.assertEqual(replacement["id"], original["id"])
+        path = f'/api/tasks/{original["id"]}'
+        for change in ({"title": "旧页面修改"}, {"completed": True}):
+            for token in ({}, {"created_at": ""}, {"created_at": original["created_at"]}):
+                status, _, body = self.request("PATCH", path, {**change, **token})
+                self.assertEqual((status, json.loads(body)["code"]), (409, "TASK_CHANGED"))
+                self.assertEqual(self.store.current()["tasks"], [replacement])
+                self.assertEqual(len(self.store.export()["events"]), 1)
+        status, _, body = self.request("PATCH", path,
+                                       {"title": "有效修改", "created_at": replacement["created_at"]})
+        self.assertEqual((status, json.loads(body)["title"]), (200, "有效修改"))
+
+    def test_stale_checklist_toggle_cannot_overwrite_newer_notes(self):
+        task = self.store.create({"title": "Checklist", "notes": "☐ First item\nOld text"})
+        path = f'/api/tasks/{task["id"]}'
+        original = {"created_at": task["created_at"], "notes_revision": task["notes_revision"]}
+        status, _, body = self.request("PATCH", path, {**original, "notes": "☐ First item\nNew text"})
+        self.assertEqual(status, 200)
+        updated = json.loads(body)
+        self.assertNotEqual(updated["notes_revision"], original["notes_revision"])
+
+        status, _, body = self.request("PATCH", path, {**original, "notes": "☑ First item\nOld text"})
+        self.assertEqual((status, json.loads(body)["code"]), (409, "TASK_CHANGED"))
+        self.assertEqual(self.store.current()["tasks"], [updated])
+        self.assertEqual(len(self.store.export()["events"]), 2)
+
+        status, _, body = self.request("PATCH", path, {
+            **original, "notes_revision": updated["notes_revision"], "notes": "☑ First item\nNew text",
+        })
+        self.assertEqual((status, json.loads(body)["notes"]), (200, "☑ First item\nNew text"))
 
     def test_yaml_export_is_default_with_complete_history_and_safe_strings(self):
         title = 'yes: #todo "中文" \\ 😀'
@@ -244,6 +417,48 @@ class HttpTests(unittest.TestCase):
                 self.assertEqual(headers["Content-Type"], "application/json; charset=utf-8")
                 self.assertIsInstance(json.loads(body)["error"], str)
 
+    def test_import_protection_large_yaml_roundtrip_and_repeat(self):
+        source = Store(Path(self.directory.name) / "source",
+                       clock=lambda: datetime.fromisoformat("2026-10-20T10:00:00+08:00"))
+        for number in range(8):
+            source.create({"title": f"Imported {number}", "notes": '"YML" \\ 中文\n' * 300})
+        content = dump_yaml(source.export())
+        self.assertGreater(len(json.dumps({"content": content}).encode()), MAX_BODY)
+        self.assertEqual(self.request("POST", "/api/import", {"content": content}, headers={"Cookie": ""})[0], 401)
+        self.assertEqual(self.request("POST", "/api/import", {"content": content},
+                                      headers={"Origin": "https://another.example"})[0], 403)
+        self.assertEqual(self.store.export()["tasks"], [])
+        status, _, body = self.request("POST", "/api/import", {"content": content})
+        self.assertEqual((status, json.loads(body)), (200, {"imported_tasks": 8, "skipped_tasks": 0}))
+        self.assertEqual(self.store.day("2026-10-20")["summary"]["pending"], 8)
+        status, _, body = self.request("POST", "/api/import", {"content": json.dumps(source.export())})
+        self.assertEqual((status, json.loads(body)), (200, {"imported_tasks": 0, "skipped_tasks": 8}))
+        self.assertEqual(len(self.store.export()["events"]), 8)
+
+    def test_import_rejects_malformed_and_oversize_files_without_writes(self):
+        from backend.data_transfer import MAX_IMPORT_BYTES
+        for content, expected, code in (("not an export", 400, "INVALID_IMPORT"),
+                                         ("x" * (MAX_IMPORT_BYTES + 1), 413, "IMPORT_TOO_LARGE")):
+            with self.subTest(code=code):
+                status, _, body = self.request("POST", "/api/import", {"content": content})
+                self.assertEqual((status, json.loads(body)["code"]), (expected, code))
+        self.assertEqual(self.store.export()["tasks"], [])
+
+        status, _, body = self.request("POST", "/api/import", body=b"[" * 10000 + b"]" * 10000)
+        self.assertEqual((status, json.loads(body)["code"]), (400, "INVALID_JSON"))
+
+    def test_export_writes_identical_atomic_host_snapshot(self):
+        self.store.create({"title": "Saved outside the container"})
+        status, _, body = self.request("GET", "/api/export")
+        self.assertEqual(status, 200)
+        snapshot = self.store.path.parent / "daily-todo.yml"
+        self.assertEqual(snapshot.read_bytes(), body)
+        self.store.create({"title": "Keep previous file if rename fails"})
+        with patch("backend.server.os.replace", side_effect=OSError("simulated full filesystem")):
+            self.assertEqual(self.request("GET", "/api/export")[0], 500)
+        self.assertEqual(snapshot.read_bytes(), body)
+        self.assertEqual(list(self.store.path.parent.glob(".daily-todo-*.tmp")), [])
+
     def test_invalid_http_inputs_and_traversal_have_json_errors(self):
         requests = [("GET", "/api/day?date=2026-02-30", None),
                     ("GET", "/api/day?date=2026-01-01&date=2026-01-02", None),
@@ -259,7 +474,7 @@ class HttpTests(unittest.TestCase):
                 self.assertEqual(status, 400)
                 self.assertIn("application/json", headers["Content-Type"])
                 self.assertIsInstance(json.loads(content)["error"], str)
-        self.assertEqual(self.request("DELETE", "/api/tasks/1")[0], 405)
+        self.assertEqual(self.request("PUT", "/api/tasks/1")[0], 405)
         self.assertEqual(self.request("GET", "/missing.js")[0], 404)
         self.assertEqual(self.request("GET", "/api/unknown")[0], 404)
 

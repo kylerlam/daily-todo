@@ -3,6 +3,8 @@ import { applyTranslations, formatDate, t } from './i18n.mjs';
 import { createDemoStore } from './demo-store.mjs';
 import { initSettings } from './settings.mjs';
 import { applyTheme } from './theme.mjs';
+import { bindTaskReorder } from './task-reorder.mjs';
+import { bindNotesChecklist, checklistPrefix } from './notes-checklist.mjs';
 
 applyTheme();
 const store = createDemoStore();
@@ -55,7 +57,7 @@ const state = { today: localToday(), selected: localToday(), month: localToday()
 let requestId = 0;
 let editingTask = null;
 let formSaving = false;
-let discardingTask = null;
+let deletingTask = null;
 let toastTimer;
 
 function errorMessage(error) {
@@ -134,8 +136,12 @@ function renderCalendar() {
     button.append(node('span', 'day-number', date.getUTCDate()));
     const dots = node('span', 'day-indicators');
     dots.setAttribute('aria-hidden', 'true');
-    if (summary?.completed) dots.append(node('i', 'activity-dot done-dot'));
-    if (summary?.pending) dots.append(node('i', 'activity-dot pending-dot'));
+    if (value < state.today && summary?.pending) {
+      dots.append(node('i', 'activity-dot overdue-dot'));
+    } else {
+      if (summary?.completed) dots.append(node('i', 'activity-dot done-dot'));
+      if (summary?.pending) dots.append(node('i', 'activity-dot pending-dot'));
+    }
     button.append(dots);
     button.addEventListener('click', () => selectDate(value));
     grid.append(button);
@@ -153,9 +159,11 @@ function selectDate(date) {
   load();
 }
 function taskSort(a, b) {
-  return Number(a.completed || a.discarded) - Number(b.completed || b.discarded) || a.day.localeCompare(b.day) || a.id - b.id;
+  return a.day.localeCompare(b.day) || Number(a.completed || a.discarded) - Number(b.completed || b.discarded) ||
+    (a.position || Number.MAX_SAFE_INTEGER) - (b.position || Number.MAX_SAFE_INTEGER) || a.id - b.id;
 }
-function makeTaskRow(task, readOnly) {
+function makeTaskRow(task) {
+  const readOnly = task.discarded || (task.completed && task.day < state.today && task.completed_at?.slice(0, 10) !== state.today);
   const row = node('article', 'task-row');
   row.dataset.taskId = task.id;
   row.classList.toggle('completed', task.completed);
@@ -165,53 +173,87 @@ function makeTaskRow(task, readOnly) {
   check.setAttribute('role', 'checkbox');
   check.setAttribute('aria-checked', String(task.completed));
   check.setAttribute('aria-label', t(task.completed ? 'undoTaskLabel' : 'completeTaskLabel', { title: task.title }));
-  check.disabled = readOnly || state.busy || task.discarded || task.day > state.today;
+  check.disabled = readOnly || state.busy;
   if (task.completed) check.append(svgElement('check'));
   if (task.discarded) check.append(svgElement('close'));
-  check.addEventListener('click', () => mutateTask(task.id, { completed: !task.completed }, task.completed ? 'taskRestored' : 'taskCompleted'));
+  check.addEventListener('click', () => mutateTask(task.id, { completed: !task.completed, created_at: task.created_at }, task.completed ? 'taskRestored' : 'taskCompleted'));
   const copy = node('div', 'task-copy');
   copy.append(node('p', 'task-title', task.title));
-  if (task.notes) copy.append(node('p', 'task-notes', task.notes));
+  if (task.notes) copy.append(makeTaskNotes(task, readOnly));
   if (task.discarded) copy.append(node('span', 'task-meta', t('taskDiscardedMeta')));
-  else if (task.day > state.today) copy.append(node('span', 'task-meta', t('taskStarts', { date: dateText(task.day, { month: 'long', day: 'numeric' }) })));
-  else if (!task.completed && task.day < state.selected) copy.append(node('span', 'task-meta', t('taskContinues', { date: dateText(task.day, { month: 'long', day: 'numeric' }) })));
   row.append(check, copy);
-  if (!readOnly && !task.discarded) {
-    const actions = node('div', 'row-actions');
-    const menuButton = node('button', 'icon-button row-menu-button');
-    menuButton.type = 'button';
-    menuButton.append(svgElement('more'));
-    menuButton.setAttribute('aria-label', t('taskMoreLabel', { title: task.title }));
-    menuButton.setAttribute('aria-expanded', 'false');
-    menuButton.disabled = state.busy;
-    const menu = node('div', 'task-menu');
-    menu.hidden = true;
+  const actions = node('div', 'row-actions');
+  const menuButton = node('button', 'icon-button row-menu-button');
+  menuButton.type = 'button';
+  menuButton.append(svgElement('more'));
+  menuButton.setAttribute('aria-label', t('taskMoreLabel', { title: task.title }));
+  menuButton.setAttribute('aria-expanded', 'false');
+  menuButton.disabled = state.busy;
+  const menu = node('div', 'task-menu');
+  menu.hidden = true;
+  if (!readOnly) {
     const edit = node('button', '', t('editTask'));
     edit.type = 'button';
     edit.addEventListener('click', () => { menu.hidden = true; openForm(task); });
     menu.append(edit);
-    if (!task.completed) {
-      const discard = node('button', '', t('discardTask'));
-      discard.type = 'button';
-      discard.addEventListener('click', () => {
-        menu.hidden = true;
-        discardingTask = task;
-        $('#discard-dialog').showModal();
-      });
-      menu.append(discard);
-    }
-    menuButton.addEventListener('click', (event) => {
-      event.stopPropagation();
-      const wasHidden = menu.hidden;
-      closeMenus();
-      menu.hidden = !wasHidden;
-      menuButton.setAttribute('aria-expanded', String(wasHidden));
-      if (wasHidden) edit.focus();
-    });
-    actions.append(menuButton, menu);
-    row.append(actions);
   }
+  const remove = node('button', '', t('deleteTask'));
+  remove.type = 'button';
+  remove.addEventListener('click', () => {
+    menu.hidden = true;
+    deletingTask = task;
+    $('#delete-task-name').textContent = task.title;
+    $('#delete-dialog').showModal();
+  });
+  menu.append(remove);
+  if (!task.completed && !task.discarded) {
+    bindTaskReorder(row, menuButton, task, async (beforeId) => {
+      const view = state.view;
+      const hadFocus = document.activeElement === menuButton;
+      await mutateTask(task.id, { before_id: beforeId, created_at: task.created_at }, 'taskReordered');
+      if (hadFocus && view === state.view && document.activeElement === document.body) {
+        $(`#${view}-view .task-row[data-task-id="${task.id}"] .row-menu-button`)?.focus({ preventScroll: true });
+      }
+    });
+  }
+  menuButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const wasHidden = menu.hidden;
+    closeMenus();
+    menu.hidden = !wasHidden;
+    menuButton.setAttribute('aria-expanded', String(wasHidden));
+    if (wasHidden) menu.firstElementChild.focus();
+  });
+  actions.append(menuButton, menu);
+  row.append(actions);
   return row;
+}
+function makeTaskNotes(task, readOnly) {
+  const lines = task.notes.split('\n');
+  if (!lines.some((line) => checklistPrefix.test(line))) return node('p', 'task-notes', task.notes);
+  const notes = node('div', 'task-notes');
+  lines.forEach((line, index) => {
+    if (!checklistPrefix.test(line)) {
+      notes.append(node('div', 'task-note-line', line));
+      return;
+    }
+    const label = node('label', 'task-note-check');
+    const checkbox = node('input');
+    const text = line.slice(2);
+    checkbox.type = 'checkbox';
+    checkbox.checked = line.startsWith('☑');
+    checkbox.disabled = readOnly || state.busy;
+    if (!text.trim()) checkbox.setAttribute('aria-label', t('checklistItem'));
+    checkbox.addEventListener('change', () => {
+      lines[index] = (checkbox.checked ? '☑' : '☐') + line.slice(1);
+      mutateTask(task.id, {
+        notes: lines.join('\n'), notes_revision: task.notes_revision, created_at: task.created_at,
+      }, 'taskSaved');
+    });
+    label.append(checkbox, node('span', '', text));
+    notes.append(label);
+  });
+  return notes;
 }
 function emptyState(container, past = false) {
   const empty = node('div', 'empty-state');
@@ -241,7 +283,7 @@ function renderDay() {
   const past = state.selected < state.today;
   $('#day-footer').textContent = t(past ? 'dayFooterPast' : state.selected > state.today ? 'dayFooterFuture' : 'dayFooterToday');
   if (!state.day.tasks.length) return emptyState(list, past);
-  [...state.day.tasks].sort(taskSort).forEach((task) => list.append(makeTaskRow(task, past || state.selected > state.today)));
+  [...state.day.tasks].sort(taskSort).forEach((task) => list.append(makeTaskRow(task)));
 }
 function renderTasks() {
   if (!state.current) return;
@@ -250,7 +292,22 @@ function renderTasks() {
   const list = $('#all-task-list');
   list.replaceChildren();
   if (!tasks.length) return emptyState(list);
-  [...tasks].sort(taskSort).forEach((task) => list.append(makeTaskRow(task, false)));
+  const sortedTasks = [...tasks].sort((a, b) =>
+    Number(b.day === state.today) - Number(a.day === state.today) || taskSort(a, b));
+  let group;
+  for (const task of sortedTasks) {
+    if (group?.dataset.day !== task.day) {
+      group = node('section', 'task-date-group');
+      group.dataset.day = task.day;
+      const label = task.day === state.today ? t('today') : dateText(task.day, { year: 'numeric', month: 'long', day: 'numeric' });
+      const heading = node('h3', 'task-date-heading', label);
+      heading.id = 'tasks-date-' + task.day;
+      group.setAttribute('aria-labelledby', heading.id);
+      group.append(heading);
+      list.append(group);
+    }
+    group.append(makeTaskRow(task));
+  }
 }
 function render() {
   const calendar = state.view === 'calendar';
@@ -280,15 +337,17 @@ function route() {
   render();
   load();
 }
-async function mutateTask(id, changes, messageKey) {
+async function mutateTask(id, changes, messageKey, method = 'PATCH') {
   if (state.busy) return;
   state.busy = true;
   render();
   try {
-    store.patch(id, changes);
+    if (method === 'DELETE') store.delete(id, changes);
+    else store.patch(id, changes);
     await load();
     toast(t(messageKey));
   } catch (error) {
+    if (error.code === 'TASK_CHANGED') await load();
     toast(errorMessage(error), true);
   } finally {
     state.busy = false;
@@ -302,28 +361,74 @@ function openForm(task = null) {
   $('#task-title').value = task?.title || '';
   $('#task-notes').value = task?.notes || '';
   $('#task-day').value = task?.day || (state.view === 'calendar' && state.selected > state.today ? state.selected : state.today);
-  $('#task-day').min = state.today;
-  $('#task-day').disabled = Boolean(task);
+  $('#task-day').min = task ? '1900-01-01' : state.today;
+  $('#task-day').disabled = Boolean(task?.completed);
   $('#form-error').hidden = true;
   $('#save-task').disabled = false;
   $('#task-dialog').showModal();
+  refreshNotesChecklist();
   $('#task-title').focus();
 }
 function updateTaskDialog() {
   $('#dialog-title').textContent = t(editingTask ? 'editTask' : 'newTask');
-  $('#date-hint').textContent = t(editingTask ? 'editDateHint' : 'newDateHint');
+  $('#date-hint').textContent = t(editingTask?.completed ? 'completedDateHint' : editingTask ? 'editDateHint' : 'newDateHint');
 }
 function setFormSaving(saving) {
   formSaving = saving;
   for (const selector of ['#new-task', '#save-task', '#close-dialog', '#cancel-dialog']) $(selector).disabled = saving;
   $('#task-title').readOnly = saving;
   $('#task-notes').readOnly = saving;
-  $('#task-day').disabled = saving || Boolean(editingTask);
+  $('#insert-checklist-item').disabled = saving;
+  $('#clear-notes').disabled = saving;
+  $('#task-day').disabled = saving || Boolean(editingTask?.completed);
+  refreshNotesChecklist();
 }
 function closeMenus() {
   document.querySelectorAll('.task-menu').forEach((menu) => { menu.hidden = true; });
   document.querySelectorAll('.row-menu-button').forEach((button) => button.setAttribute('aria-expanded', 'false'));
 }
+const notesEditor = $('#task-notes');
+const refreshNotesChecklist = bindNotesChecklist(notesEditor, $('#notes-checklist'), () => t('checklistItem'));
+function notesLineStart() {
+  return notesEditor.value.slice(0, notesEditor.selectionStart).lastIndexOf('\n') + 1;
+}
+function replaceNotesRange(text, start, end) {
+  if (notesEditor.value.length - (end - start) + text.length > notesEditor.maxLength) return false;
+  notesEditor.setRangeText(text, start, end, 'end');
+  refreshNotesChecklist();
+  return true;
+}
+$('#insert-checklist-item').addEventListener('click', () => {
+  const start = notesLineStart();
+  const line = notesEditor.value.slice(start).split('\n', 1)[0];
+  const caret = notesEditor.selectionStart;
+  if (!checklistPrefix.test(line)) {
+    const end = notesEditor.selectionEnd;
+    const direction = notesEditor.selectionDirection;
+    if (replaceNotesRange('☐ ', start, start)) notesEditor.setSelectionRange(caret + 2, end + 2, direction);
+  } else if (!line.slice(2).trim()) {
+    notesEditor.setSelectionRange(start + 2, start + 2);
+  } else if (caret <= start + 2) {
+    if (replaceNotesRange('☐ \n', start, start)) notesEditor.setSelectionRange(start + 2, start + 2);
+  } else {
+    replaceNotesRange('\n☐ ', caret, caret);
+  }
+  notesEditor.focus();
+});
+$('#clear-notes').addEventListener('click', () => {
+  replaceNotesRange('', 0, notesEditor.value.length);
+  notesEditor.focus();
+});
+notesEditor.addEventListener('beforeinput', (event) => {
+  if (event.isComposing || !event.cancelable || !['insertLineBreak', 'insertParagraph'].includes(event.inputType)) return;
+  const start = notesLineStart();
+  const line = notesEditor.value.slice(start).split('\n', 1)[0];
+  const end = start + line.length;
+  if (!checklistPrefix.test(line) || notesEditor.selectionStart < start + 2 || notesEditor.selectionEnd > end) return;
+  event.preventDefault();
+  if (line.slice(2).trim()) replaceNotesRange('\n☐ ', notesEditor.selectionStart, notesEditor.selectionEnd);
+  else replaceNotesRange('', start, end);
+});
 $('#task-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (formSaving) return;
@@ -332,7 +437,13 @@ $('#task-form').addEventListener('submit', async (event) => {
   if (!title) { $('#task-title').focus(); return; }
   $('#form-error').hidden = true;
   const changes = { title, notes: $('#task-notes').value };
-  if (!targetTask) changes.day = $('#task-day').value;
+  if (targetTask) {
+    changes.created_at = targetTask.created_at;
+    if (changes.notes === targetTask.notes.replace(/\r\n?/g, '\n')) delete changes.notes;
+    else changes.notes_revision = targetTask.notes_revision;
+  }
+  const day = $('#task-day').value;
+  if (!targetTask || (!targetTask.completed && day !== targetTask.day)) changes.day = day;
   setFormSaving(true);
   try {
     const task = targetTask ? store.patch(targetTask.id, changes) : store.create(changes);
@@ -369,10 +480,10 @@ $('#new-task').addEventListener('click', () => openForm());
 $('#close-dialog').addEventListener('click', () => $('#task-dialog').close());
 $('#cancel-dialog').addEventListener('click', () => $('#task-dialog').close());
 $('#task-dialog').addEventListener('cancel', (event) => { if (formSaving) event.preventDefault(); });
-$('#keep-task').addEventListener('click', () => $('#discard-dialog').close());
-$('#confirm-discard').addEventListener('click', () => {
-  $('#discard-dialog').close();
-  if (discardingTask) mutateTask(discardingTask.id, { discarded: true }, 'taskDiscarded');
+$('#keep-task').addEventListener('click', () => $('#delete-dialog').close());
+$('#confirm-delete').addEventListener('click', () => {
+  $('#delete-dialog').close();
+  if (deletingTask) mutateTask(deletingTask.id, { created_at: deletingTask.created_at }, 'taskDeleted', 'DELETE');
 });
 $('#previous-month').addEventListener('click', () => selectDate(shiftMonth(state.month, -1) + '-01'));
 $('#next-month').addEventListener('click', () => selectDate(shiftMonth(state.month, 1) + '-01'));
@@ -388,7 +499,9 @@ document.addEventListener('click', closeMenus);
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenus(); });
 window.addEventListener('hashchange', route);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
-setInterval(() => { if (!document.hidden && !state.busy && !$('#task-dialog').open && !$('#discard-dialog').open && !$('#export-dialog').open) load(); }, 60000);
+setInterval(() => {
+  if (!document.hidden && !state.busy && state.today !== localToday()) load();
+}, 60000);
 let exportSaving = false;
 function exportOptions() {
   const format = $('#export-format').value;

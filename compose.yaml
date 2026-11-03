@@ -1,15 +1,18 @@
 name: tdl
 services:
   app:
+    container_name: tdl-app
     build: .
     image: tdl:local
     user: "${TDL_UID:-1000}:${TDL_GID:-1000}"
     environment:
-      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-false}"
+      CONFIG_FILE: /app/config/app.toml
+      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-}"
     ports:
       - "${TDL_BIND_ADDRESS:-127.0.0.1}:3456:8080"
     volumes:
-      - ./data:/app/data
+      - ./compose/data:/app/data
+      - ./compose/config:/app/config:ro
     read_only: true
     tmpfs:
       - /tmp

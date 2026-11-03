@@ -15,16 +15,52 @@ from pathlib import Path
 import re
 import secrets
 import sqlite3
+import tempfile
 import threading
 import time
+import tomllib
 import unicodedata
 from urllib.parse import parse_qs, unquote, urlsplit
 from zoneinfo import ZoneInfo
+
+if __package__:
+    from .data_transfer import ImportDataError, MAX_IMPORT_BYTES, merge_export, read_export
+else:
+    from data_transfer import ImportDataError, MAX_IMPORT_BYTES, merge_export, read_export
 
 
 MAX_BODY = 32768
 PASSWORD_ITERATIONS = 600000
 SESSION_SECONDS = 30 * 24 * 60 * 60
+TASK_PATCH_FIELDS = {"title", "notes", "notes_revision", "completed", "discarded", "day", "before_id", "created_at"}
+
+
+def notes_revision(notes):
+    return hashlib.sha256(notes.encode("utf-8")).hexdigest()
+
+
+def load_config(path=None):
+    settings = {"timezone": "Asia/Hong_Kong", "secure_cookies": False}
+    config = Path(path or "./config/app.toml")
+    if path or config.exists():
+        with config.open("rb") as stream:
+            value = tomllib.load(stream)
+        if set(value) - {"app"} or not isinstance(value.get("app", {}), dict):
+            raise ValueError("Invalid app configuration.")
+        app = value.get("app", {})
+        if set(app) - settings.keys():
+            raise ValueError("Unsupported app configuration field.")
+        settings.update(app)
+    settings["timezone"] = os.environ.get("TZ", settings["timezone"])
+    if os.environ.get("SESSION_COOKIE_SECURE"):
+        setting = os.environ["SESSION_COOKIE_SECURE"].lower()
+        if setting not in ("true", "false", "1", "0"):
+            raise ValueError("SESSION_COOKIE_SECURE must be true or false.")
+        settings["secure_cookies"] = setting in ("true", "1")
+    if type(settings["secure_cookies"]) is not bool or not isinstance(settings["timezone"], str):
+        raise ValueError("Invalid app configuration type.")
+    ZoneInfo(settings["timezone"])
+    return settings
 
 
 def password_hash(password, salt):
@@ -118,8 +154,10 @@ class Store:
                     title TEXT NOT NULL,
                     notes TEXT NOT NULL,
                     created_at TEXT NOT NULL,
-                    day TEXT NOT NULL
+                    day TEXT NOT NULL,
+                    position INTEGER NOT NULL DEFAULT 0
                 );
+                CREATE INDEX IF NOT EXISTS tasks_day ON tasks(day);
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY,
                     task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE RESTRICT,
@@ -128,18 +166,19 @@ class Store:
                     effective_date TEXT NOT NULL,
                     state_at TEXT NOT NULL,
                     title TEXT NOT NULL,
-                    notes TEXT NOT NULL
+                    notes TEXT NOT NULL,
+                    previous_day TEXT
                 );
                 CREATE INDEX IF NOT EXISTS events_task_date ON events(task_id, effective_date, id);
                 CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events
                     BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
-                CREATE TRIGGER IF NOT EXISTS events_no_delete BEFORE DELETE ON events
-                    BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
+                DROP TRIGGER IF EXISTS events_no_delete;
                 CREATE TABLE IF NOT EXISTS accounts (
                     id INTEGER PRIMARY KEY CHECK(id = 1),
                     username TEXT NOT NULL UNIQUE,
                     salt TEXT NOT NULL,
-                    password_hash TEXT NOT NULL
+                    password_hash TEXT NOT NULL,
+                    password_changed INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS sessions (
                     token_hash TEXT PRIMARY KEY,
@@ -147,9 +186,20 @@ class Store:
                     expires_at INTEGER NOT NULL
                 );
             """)
+            db.execute("BEGIN IMMEDIATE")
+            if "position" not in {row["name"] for row in db.execute("PRAGMA table_info(tasks)")}:
+                db.execute("ALTER TABLE tasks ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+            if "previous_day" not in {row["name"] for row in db.execute("PRAGMA table_info(events)")}:
+                db.execute("ALTER TABLE events ADD COLUMN previous_day TEXT")
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(accounts)")}
+            if "password_changed" not in columns:
+                db.execute("ALTER TABLE accounts ADD COLUMN password_changed INTEGER NOT NULL DEFAULT 0")
+                account = db.execute("SELECT salt,password_hash FROM accounts WHERE id=1").fetchone()
+                if account and not hmac.compare_digest(password_hash("admin123", account["salt"]), account["password_hash"]):
+                    db.execute("UPDATE accounts SET password_changed=1 WHERE id=1")
             salt = secrets.token_hex(16)
             if db.execute("SELECT 1 FROM accounts WHERE id=1").fetchone() is None:
-                db.execute("INSERT OR IGNORE INTO accounts VALUES(1,?,?,?)",
+                db.execute("INSERT OR IGNORE INTO accounts(id,username,salt,password_hash) VALUES(1,?,?,?)",
                            ("admin", salt, password_hash("admin123", salt)))
 
     def connect(self):
@@ -163,6 +213,10 @@ class Store:
 
     def today(self):
         return self.now()[:10]
+
+    def show_default_credentials(self):
+        with closing(self.connect()) as db:
+            return not bool(db.execute("SELECT password_changed FROM accounts WHERE id=1").fetchone()[0])
 
     def login(self, data):
         validate_fields(data, {"username", "password"})
@@ -202,31 +256,35 @@ class Store:
             raise RequestError("Use a username without control characters or outer spaces.", code="INVALID_USERNAME")
         current = credential_text(data.get("current_password"), "INVALID_CURRENT_PASSWORD", 0, 256)
         new_password = None
-        if "new_password" in data:
+        if "new_password" in data and data["new_password"] != "":
             new_password = credential_text(data["new_password"], "INVALID_PASSWORD", 8, 256)
         with closing(self.connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             account = db.execute("SELECT * FROM accounts WHERE id=1").fetchone()
             if not hmac.compare_digest(password_hash(current, account["salt"]), account["password_hash"]):
                 raise RequestError("The current password is incorrect.", code="INVALID_CURRENT_PASSWORD")
-            if username != account["username"] or new_password is not None:
-                salt = secrets.token_hex(16) if new_password is not None else account["salt"]
-                hashed = password_hash(new_password, salt) if new_password is not None else account["password_hash"]
-                db.execute("UPDATE accounts SET username=?,salt=?,password_hash=? WHERE id=1", (username, salt, hashed))
+            changed = new_password is not None and not hmac.compare_digest(new_password.encode(), current.encode())
+            if username != account["username"] or changed:
+                salt = secrets.token_hex(16) if changed else account["salt"]
+                hashed = password_hash(new_password, salt) if changed else account["password_hash"]
+                db.execute("""UPDATE accounts SET username=?,salt=?,password_hash=?,
+                    password_changed=CASE WHEN ? THEN 1 ELSE password_changed END WHERE id=1""",
+                    (username, salt, hashed, changed))
             db.execute("DELETE FROM sessions")
 
     @staticmethod
-    def append_event(db, task_id, kind, now, state_at, title, notes):
+    def append_event(db, task_id, kind, now, state_at, title, notes, previous_day=None):
         db.execute(
-            "INSERT INTO events(task_id,kind,at,effective_date,state_at,title,notes) VALUES(?,?,?,?,?,?,?)",
-            (task_id, kind, now, now[:10], state_at, title, notes),
+            "INSERT INTO events(task_id,kind,at,effective_date,state_at,title,notes,previous_day) VALUES(?,?,?,?,?,?,?,?)",
+            (task_id, kind, now, now[:10], state_at, title, notes, previous_day),
         )
 
     @staticmethod
     def task(row):
         return {
             "id": row["id"], "title": row["title"], "notes": row["notes"],
-            "created_at": row["created_at"], "day": row["day"],
+            "notes_revision": notes_revision(row["notes"]),
+            "created_at": row["created_at"], "day": row["day"], "position": row["position"],
             "completed": row["kind"] == "complete",
             "completed_at": row["state_at"] if row["kind"] == "complete" else None,
             "discarded": row["kind"] == "discard",
@@ -259,41 +317,75 @@ class Store:
             return self.task(self.latest(db, task_id))
 
     def patch(self, task_id, data):
-        validate_fields(data, {"title", "notes", "completed", "discarded"})
-        if not data:
+        validate_fields(data, TASK_PATCH_FIELDS)
+        if not data.keys() - {"created_at", "notes_revision"}:
             raise RequestError("Provide at least one change.", code="EMPTY_UPDATE")
         if "completed" in data and "discarded" in data:
             raise RequestError("Change only one task status at a time.", code="CONFLICTING_STATUS")
+        if "before_id" in data:
+            before_id = data["before_id"]
+            if data.keys() - {"before_id", "created_at"} or (
+                    before_id is not None and (type(before_id) is not int or not 0 < before_id < 2 ** 63)):
+                raise RequestError("Provide a valid task order change.", code="INVALID_TASK_ORDER")
         with closing(self.connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             now = self.now()
             old = self.latest(db, task_id)
+            if "created_at" in data and old["created_at"] != data["created_at"]:
+                raise RequestError("The task has changed. Refresh before changing it.", 409, "TASK_CHANGED")
+            if "notes_revision" in data and data["notes_revision"] != notes_revision(old["notes"]):
+                raise RequestError("The task notes have changed. Refresh before editing them.", 409, "TASK_CHANGED")
+            if "before_id" in data:
+                self.reorder(db, old, before_id)
+                return self.task(self.latest(db, task_id))
             title = data.get("title", old["title"]).strip()
             notes = data.get("notes", old["notes"])
+            day = valid_date(data["day"]) if "day" in data else old["day"]
+            moved = day != old["day"]
             kind = old["kind"]
+            if moved and kind != "todo":
+                raise RequestError("Only unfinished tasks can be rescheduled.", code="TASK_DATE_LOCKED")
             if "completed" in data:
                 kind = "complete" if data["completed"] else "todo"
             if "discarded" in data:
                 kind = "discard" if data["discarded"] else "todo"
-            if kind == "complete" and old["day"] > now[:10]:
-                raise RequestError("A task cannot be completed before its scheduled day.", code="FUTURE_COMPLETION")
-            if (title, notes, kind) != (old["title"], old["notes"], old["kind"]):
+            if moved or (title, notes, kind) != (old["title"], old["notes"], old["kind"]):
                 state_at = now if kind != old["kind"] else old["state_at"]
-                db.execute("UPDATE tasks SET title=?, notes=? WHERE id=?", (title, notes, task_id))
-                self.append_event(db, task_id, kind, now, state_at, title, notes)
+                db.execute("UPDATE tasks SET title=?, notes=?, day=?, position=? WHERE id=?",
+                           (title, notes, day, 0 if moved else old["position"], task_id))
+                self.append_event(db, task_id, kind, now, state_at, title, notes, old["day"] if moved else None)
             return self.task(self.latest(db, task_id))
+
+    def reorder(self, db, task, before_id):
+        pending = [row["id"] for row in self.rows_on(db, task["day"]) if row["kind"] == "todo"]
+        if task["id"] not in pending or (before_id is not None and before_id not in pending):
+            raise RequestError("Reorder unfinished tasks within the same date.", code="INVALID_TASK_ORDER")
+        if before_id == task["id"]:
+            return
+        pending.remove(task["id"])
+        index = len(pending) if before_id is None else pending.index(before_id)
+        pending.insert(index, task["id"])
+        db.executemany("UPDATE tasks SET position=? WHERE id=?", enumerate(pending, 1))
+
+    def delete(self, task_id, expected_created_at=None):
+        with closing(self.connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            old = self.latest(db, task_id)
+            if expected_created_at is not None and old["created_at"] != expected_created_at:
+                raise RequestError("The task has changed. Refresh before deleting it.", 409, "TASK_CHANGED")
+            db.execute("DELETE FROM events WHERE task_id=?", (task_id,))
+            db.execute("DELETE FROM tasks WHERE id=?", (task_id,))
 
     def rows_on(self, db, selected):
         return db.execute("""
-            SELECT t.id, t.created_at, t.day, e.title, e.notes, e.kind, e.state_at
+            SELECT t.*, e.kind, e.state_at
             FROM tasks t JOIN events e ON e.id = (
-                SELECT MAX(id) FROM events WHERE task_id=t.id AND effective_date <= ?
-            ) WHERE t.day <= ? ORDER BY t.day, t.id
-        """, (selected, selected)).fetchall()
+                SELECT MAX(id) FROM events WHERE task_id=t.id
+            ) WHERE t.day = ? ORDER BY t.position = 0, t.position, t.id
+        """, (selected,)).fetchall()
 
     def day_payload(self, db, selected, today):
-        tasks = [self.task(row) for row in self.rows_on(db, selected)
-                 if row["kind"] == "todo" or row["state_at"][:10] == selected]
+        tasks = [self.task(row) for row in self.rows_on(db, selected)]
         return self.envelope(selected, today, tasks)
 
     @staticmethod
@@ -314,7 +406,7 @@ class Store:
         with closing(self.connect()) as db, db:
             rows = db.execute("""
                 SELECT t.*, e.kind, e.state_at FROM tasks t JOIN events e ON e.id =
-                    (SELECT MAX(id) FROM events WHERE task_id=t.id) ORDER BY t.day, t.id
+                    (SELECT MAX(id) FROM events WHERE task_id=t.id) ORDER BY t.day, t.position = 0, t.position, t.id
             """).fetchall()
             tasks = [self.task(row) for row in rows if row["kind"] == "todo"
                      or (row["kind"] == "complete" and row["state_at"][:10] == today)]
@@ -333,18 +425,41 @@ class Store:
                 days.append({"date": selected, **self.day_payload(db, selected, today)["summary"]})
         return {"month": month, "days": days}
 
-    def export(self):
+    def import_data(self, content):
+        value = read_export(content)
+        with closing(self.connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            return merge_export(db, value)
+
+    def export(self, save=False):
         with closing(self.connect()) as db, db:
             db.execute("BEGIN")
-            return {"format": "tdl-export", "version": 1, "timezone": str(self.zone),
+            value = {"format": "tdl-export", "version": 1, "timezone": str(self.zone),
                     "exported_at": self.now(),
-                    "tasks": [dict(row) for row in db.execute("SELECT * FROM tasks ORDER BY id")],
-                    "events": [dict(row) for row in db.execute("SELECT * FROM events ORDER BY id")]}
+                    "tasks": [{key: val for key, val in dict(row).items() if key != "position" or val}
+                              for row in db.execute("SELECT * FROM tasks ORDER BY id")],
+                    "events": [{key: val for key, val in dict(row).items() if val is not None}
+                               for row in db.execute("SELECT * FROM events ORDER BY id")]}
+        if save:
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.path.parent,
+                                                 prefix=".daily-todo-", suffix=".tmp", delete=False) as stream:
+                    temporary = stream.name
+                    stream.write(dump_yaml(value))
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, self.path.parent / "daily-todo.yml")
+            finally:
+                if temporary and Path(temporary).exists():
+                    Path(temporary).unlink()
+        return value
 
 
-def make_server(host, port, store, dist_dir):
+def make_server(host, port, store, dist_dir, secure_cookie=None):
     dist = Path(dist_dir).resolve()
-    secure_cookie = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() in ("1", "true")
+    if secure_cookie is None:
+        secure_cookie = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() in ("1", "true")
     attempts = defaultdict(deque)
     attempts_lock = threading.Lock()
 
@@ -413,20 +528,20 @@ def make_server(host, port, store, dist_dir):
                     raise RequestError("Too many login attempts. Try again in five minutes.", 429, "RATE_LIMITED")
                 history.append(now)
 
-        def body(self):
+        def body(self, limit=MAX_BODY):
             if self.headers.get("Transfer-Encoding"):
                 raise RequestError("Chunked requests are not supported.", code="UNSUPPORTED_TRANSFER_ENCODING")
             try:
                 length = int(self.headers.get("Content-Length", ""))
             except ValueError:
                 raise RequestError("The request length is invalid.", code="INVALID_CONTENT_LENGTH") from None
-            if not 0 < length <= MAX_BODY:
+            if not 0 < length <= limit:
                 raise RequestError("The request body is too large or empty.", code="BODY_TOO_LARGE")
             if self.headers.get_content_type() != "application/json":
                 raise RequestError("Use application/json.", 415, "UNSUPPORTED_CONTENT_TYPE")
             try:
                 return json.loads(self.rfile.read(length))
-            except (ValueError, UnicodeError):
+            except (ValueError, UnicodeError, RecursionError):
                 raise RequestError("The JSON body is invalid.", code="INVALID_JSON") from None
 
         def handle_request(self):
@@ -444,7 +559,8 @@ def make_server(host, port, store, dist_dir):
                     raise RequestError("Registration is disabled.", 403, "REGISTRATION_DISABLED")
                 if path == "/api/auth/status" and not mutation:
                     return self.send_json({"authenticated": self.user is not None, "user": self.user,
-                                           "registration_enabled": False})
+                                           "registration_enabled": False,
+                                           "show_default_credentials": store.show_default_credentials()})
                 if path == "/api/auth/login" and self.command == "POST":
                     self.check_login_limit()
                     token, user = store.login(self.body())
@@ -482,7 +598,7 @@ def make_server(host, port, store, dist_dir):
                         export_format = query.get("format", ["yml"])[0]
                         if export_format not in ("json", "yml", "yaml"):
                             raise RequestError("The export format must be yml, yaml or json.", code="INVALID_EXPORT_FORMAT")
-                        data = store.export()
+                        data = store.export(save=True)
                         if export_format == "json":
                             return self.send_json(data, filename=f"tdl-{store.today()}.json")
                         return self.send_bytes(dump_yaml(data).encode(), "application/yaml; charset=utf-8",
@@ -492,12 +608,29 @@ def make_server(host, port, store, dist_dir):
                     return self.static(path)
                 if self.command == "POST" and path == "/api/tasks":
                     return self.send_json(store.create(self.body()), 201)
+                if self.command == "POST" and path == "/api/import":
+                    data = self.body(MAX_IMPORT_BYTES * 2 + 1024)
+                    validate_fields(data, {"content"})
+                    return self.send_json(store.import_data(data.get("content")))
                 match = re.fullmatch(r"/api/tasks/(\d+)", path)
                 if self.command == "PATCH" and match:
-                    return self.send_json(store.patch(int(match[1]), self.body()))
+                    data = self.body()
+                    validate_fields(data, TASK_PATCH_FIELDS)
+                    if not isinstance(data.get("created_at"), str) or not data["created_at"]:
+                        raise RequestError("The task has changed. Refresh before changing it.", 409, "TASK_CHANGED")
+                    return self.send_json(store.patch(int(match[1]), data))
+                if self.command == "DELETE" and match:
+                    data = self.body()
+                    validate_fields(data, {"created_at"})
+                    if not isinstance(data.get("created_at"), str) or not data["created_at"]:
+                        raise RequestError("Provide the task creation timestamp.", code="INVALID_CREATED_AT")
+                    store.delete(int(match[1]), data["created_at"])
+                    return self.send_json({"ok": True})
                 raise RequestError("This method is not allowed.", 405, "METHOD_NOT_ALLOWED")
             except RequestError as error:
                 self.send_json({"error": str(error), "code": error.code}, error.status)
+            except ImportDataError as error:
+                self.send_json({"error": str(error), "code": error.code}, 413 if error.code == "IMPORT_TOO_LARGE" else 400)
             except (sqlite3.DatabaseError, OSError):
                 self.send_json({"error": "Unable to read or save data. Try again later.", "code": "STORAGE_ERROR"}, 500)
 
@@ -543,9 +676,10 @@ def make_server(host, port, store, dist_dir):
 
 
 if __name__ == "__main__":
-    store = Store(os.environ.get("DATA_DIR", "./data"))
+    settings = load_config(os.environ.get("CONFIG_FILE"))
+    store = Store(os.environ.get("DATA_DIR", "./data"), timezone=settings["timezone"])
     server = make_server(os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", "8080")), store,
-                         os.environ.get("DIST_DIR", "./dist"))
+                         os.environ.get("DIST_DIR", "./dist"), secure_cookie=settings["secure_cookies"])
     print(f"TDL running at http://{server.server_address[0]}:{server.server_address[1]}", flush=True)
     try:
         server.serve_forever()

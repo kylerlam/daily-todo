@@ -15,8 +15,9 @@ test('seeds fictional samples once, isolates browsers, persists and resets only 
   const { store, storage, values, clock } = environment();
   assert.equal(store.current().today, '2026-10-30');
   assert.equal(store.exportData().tasks.length, 4);
-  assert.equal(store.day('2026-10-29').summary.completed, 1);
-  assert.equal(store.day('2026-10-30').summary.completed, 1);
+  assert.deepEqual(store.day('2026-10-29').summary, { total: 1, completed: 0, pending: 1 });
+  assert.deepEqual(store.day('2026-10-30').summary, { total: 2, completed: 1, pending: 1 });
+  assert.deepEqual(store.day('2026-10-31').summary, { total: 1, completed: 0, pending: 1 });
   const task = store.create({ title: '  Local only  ', notes: '<img src=x onerror=alert(1)>' });
   assert.equal(task.title, 'Local only');
   const reopened = createDemoStore({ storage, clock });
@@ -31,32 +32,60 @@ test('seeds fictional samples once, isolates browsers, persists and resets only 
   assert.equal(values.get('unrelated'), 'keep me');
 });
 
-test('history keeps earlier titles and status dates through edits, completion, undo and discard', () => {
-  const { store, on } = environment();
-  const task = store.create({ title: 'Original', notes: 'Before' });
-  on('2026-10-30T16:01:00Z');
-  store.patch(task.id, { title: 'Updated', notes: 'After' });
-  assert.equal(store.day('2026-10-30').tasks.find((item) => item.id === task.id).title, 'Original');
+test('assigned days preserve early completion and allow rescheduling pending tasks', () => {
+  const { store } = environment();
+  const task = store.create({ title: 'Original', notes: 'Before', day: '2026-11-02' });
   const completed = store.patch(task.id, { completed: true });
-  assert.equal(completed.completed_at, '2026-10-31T00:01:00.000+08:00');
+  assert.equal(completed.completed_at, '2026-10-30T07:30:00.000+08:00');
+  assert.equal(store.day(task.day).tasks[0].completed, true);
+  assert.ok(!store.day('2026-10-30').tasks.some((item) => item.id === task.id));
   const count = store.exportData().events.length;
   store.patch(task.id, { completed: true });
   assert.equal(store.exportData().events.length, count);
-  on('2026-10-31T16:01:00Z');
-  store.patch(task.id, { title: 'Later edit' });
-  assert.equal(store.day('2026-10-31').tasks.find((item) => item.id === task.id).title, 'Updated');
-  assert.equal(store.current().tasks.some((item) => item.id === task.id), false);
+  assert.throws(() => store.patch(task.id, { day: '2026-11-03' }), code('TASK_DATE_LOCKED'));
   store.patch(task.id, { completed: false });
-  assert.equal(store.day('2026-10-31').tasks.find((item) => item.id === task.id).completed_at, completed.completed_at);
-  assert.equal(store.current().tasks.find((item) => item.id === task.id).completed, false);
-  store.patch(task.id, { discarded: true });
-  assert.equal(store.day('2026-11-01').tasks.find((item) => item.id === task.id).discarded, true);
-  assert.equal(store.current().tasks.some((item) => item.id === task.id), false);
+  store.patch(task.id, { day: '2026-11-03' });
+  assert.equal(store.day(task.day).summary.total, 0);
+  assert.equal(store.day('2026-11-03').tasks[0].id, task.id);
+  assert.equal(store.exportData().events.at(-1).previous_day, task.day);
   assert.equal(store.month('2024-02').days.length, 29);
   for (const day of store.month('2026-10').days) assert.deepEqual(day, { date: day.date, ...store.day(day.date).summary });
 });
 
-test('invalid inputs and future completion do not alter saved data', () => {
+test('changes survive reload until midnight in Hong Kong, then the four samples move to the new dates', () => {
+  const { store, on, storage, clock, values } = environment();
+  const task = store.create({ title: 'Visitor change' });
+  on('2026-10-30T15:59:59Z');
+  const reopened = createDemoStore({ storage, clock });
+  assert.ok(reopened.current().tasks.some((item) => item.id === task.id));
+  on('2026-10-30T16:00:00Z');
+  const current = reopened.current();
+  assert.equal(current.today, '2026-10-31');
+  assert.equal(current.tasks.length, 4);
+  assert.ok(!current.tasks.some((item) => item.title === task.title));
+  assert.deepEqual(current.tasks.map((item) => [item.day, item.completed]), [
+    ['2026-10-30', false], ['2026-10-31', true], ['2026-10-31', false], ['2026-11-01', false],
+  ]);
+  assert.equal(values.get('unrelated'), 'keep me');
+});
+
+test('reordering persists and stale edits cannot overwrite notes or delete reused tasks', () => {
+  const { store, on } = environment();
+  const first = store.create({ title: 'First', notes: '☐ First line' });
+  const second = store.create({ title: 'Second' });
+  store.patch(second.id, { before_id: first.id, created_at: second.created_at });
+  assert.deepEqual(store.day(first.day).tasks.filter((item) => item.id >= first.id).map((item) => item.id), [second.id, first.id]);
+  store.patch(first.id, { notes: 'New note', notes_revision: first.notes_revision });
+  assert.throws(() => store.patch(first.id, { notes: '☑ First line', notes_revision: first.notes_revision }), code('TASK_CHANGED'));
+  store.delete(second.id, { created_at: second.created_at });
+  assert.ok(!store.exportData().events.some((event) => event.task_id === second.id));
+  on('2026-10-29T23:31:00Z');
+  const replacement = store.create({ title: 'Replacement' });
+  assert.equal(replacement.id, second.id);
+  assert.throws(() => store.delete(second.id, { created_at: second.created_at }), code('TASK_CHANGED'));
+});
+
+test('invalid inputs do not alter saved data', () => {
   const { store, values } = environment();
   store.current();
   const before = values.get(DEMO_STORAGE_KEY);
@@ -69,7 +98,7 @@ test('invalid inputs and future completion do not alter saved data', () => {
     [{ title: 'x', extra: 1 }, 'UNKNOWN_FIELDS'],
   ]) assert.throws(() => store.create(input), code(expected));
   const future = store.current().tasks.find((task) => task.day > store.current().today);
-  assert.throws(() => store.patch(future.id, { completed: true }), code('FUTURE_COMPLETION'));
+  assert.throws(() => store.patch(future.id, { before_id: 999 }), code('INVALID_TASK_ORDER'));
   assert.throws(() => store.patch(future.id, { completed: 1 }), code('INVALID_BOOLEAN'));
   assert.throws(() => store.patch(future.id, { completed: true, discarded: false }), code('CONFLICTING_STATUS'));
   assert.throws(() => store.patch(future.id, {}), code('EMPTY_UPDATE'));
@@ -79,20 +108,21 @@ test('invalid inputs and future completion do not alter saved data', () => {
   assert.equal(values.get(DEMO_STORAGE_KEY), before);
 });
 
-test('corrupted or externally changed storage is rejected without deleting it, with explicit reset recovery', () => {
+test('previous or corrupted demo storage resets without touching unrelated data', () => {
   const { store, values } = environment();
   const valid = store.exportData();
   for (const raw of ['{bad', '{}', JSON.stringify({ version: 1, tasks: valid.tasks, events: [] })]) {
     values.set(DEMO_STORAGE_KEY, raw);
-    assert.throws(() => store.current(), code('DEMO_STORAGE_INVALID'));
-    assert.equal(values.get(DEMO_STORAGE_KEY), raw);
+    assert.equal(store.current().tasks.length, 4);
+    assert.equal(JSON.parse(values.get(DEMO_STORAGE_KEY)).version, 2);
   }
   store.reset();
   assert.equal(store.exportData().tasks.length, 4);
   const damaged = JSON.parse(values.get(DEMO_STORAGE_KEY));
   damaged.events[0].title = '<script>alert(1)</script>';
   values.set(DEMO_STORAGE_KEY, JSON.stringify(damaged));
-  assert.throws(() => store.current(), code('DEMO_STORAGE_INVALID'));
+  assert.equal(store.current().tasks.length, 4);
+  assert.equal(values.get('unrelated'), 'keep me');
 });
 
 test('blocked storage, lazy browser getter and quota errors never pretend to save', (t) => {
