@@ -160,7 +160,7 @@ Open **Settings → Data**, choose a `.yml`, `.yaml`, or `.json` file exported b
 
 YML imports support this application's limited export syntax: JSON-quoted string scalars and two-space block indentation. Arbitrary third-party YAML, anchors, aliases, and tags are not supported. Use the original export rather than converting it through another application.
 
-Import merges task history without clearing existing data. An identical export or an older history prefix is skipped. A compatible newer history adds its missing events. Diverging history rejects the entire batch, so existing history is not overwritten by an incompatible import. Imported account credentials and sessions are not part of this format.
+Import merges task history without clearing existing data. An identical export or an older history prefix is skipped. A compatible newer history adds its missing events. Diverging history rejects the entire batch, so existing history is not overwritten by an incompatible import. Each date keeps its existing task order, with imported and rescheduled tasks appended in their source order. Imported account credentials and sessions are not part of this format.
 
 ## Long-term storage and recovery
 

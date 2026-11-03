@@ -126,6 +126,27 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(self.rows(restored), self.rows(self.source))
         self.assertEqual([task["title"] for task in restored.day("2026-10-29")["tasks"]], ["Second", "First"])
 
+    def test_import_preserves_local_priority_and_appends_arrivals_in_source_order(self):
+        day = "2026-10-29"
+        first = self.source.create({"title": "A", "day": day})
+        second = self.source.create({"title": "B", "day": day})
+        moved = self.source.create({"title": "C"})
+        self.source.patch(second["id"], {"before_id": first["id"]})
+        self.target.import_data(dump_yaml(self.source.export()))
+
+        self.on("2026-10-28")
+        self.source.patch(moved["id"], {"day": day})
+        added = self.source.create({"title": "D", "day": day})
+        self.source.patch(moved["id"], {"before_id": second["id"]})
+        self.source.patch(added["id"], {"before_id": moved["id"]})
+        newer = dump_yaml(self.source.export())
+
+        self.assertEqual(self.target.import_data(newer), {"imported_tasks": 2, "skipped_tasks": 2})
+        self.assertEqual([task["title"] for task in self.target.day(day)["tasks"]], ["B", "A", "D", "C"])
+        merged = self.rows(self.target)
+        self.assertEqual(self.target.import_data(newer), {"imported_tasks": 0, "skipped_tasks": 4})
+        self.assertEqual(self.rows(self.target), merged)
+
     def test_divergent_history_rejects_entire_batch(self):
         self.source.create({"title": "New sibling must not leak"})
         shared = self.source.create({"title": "Shared origin"})

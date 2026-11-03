@@ -261,22 +261,34 @@ def merge_export(db, value):
             if len(history) <= count:
                 skipped += 1
             else:
-                plan.append((task, history[count:], local_task["id"]))
+                plan.append((task, history[count:], local_task))
         elif matches:
             raise ImportDataError("This task has conflicting history. No data was imported.", "IMPORT_CONFLICT")
         else:
             plan.append((task, history, None))
-    pending = []
-    for task, history, local_id in plan:
-        if local_id is None:
+    pending, arrivals = [], {}
+    for task, history, local_task in plan:
+        day, position = task["day"], task.get("position", 0)
+        if local_task is None:
             local_id = db.execute("INSERT INTO tasks(title,notes,created_at,day,position) VALUES(?,?,?,?,?)",
-                                  (task["title"], task["notes"], task["created_at"], task["day"],
-                                   task.get("position", 0))).lastrowid
+                                  (task["title"], task["notes"], task["created_at"], day, position)).lastrowid
         else:
+            local_id = local_task["id"]
             db.execute("""UPDATE tasks SET title=?,notes=?,day=?,position=CASE WHEN day=? THEN position ELSE ? END
-                       WHERE id=?""", (task["title"], task["notes"], task["day"], task["day"],
-                                        task.get("position", 0), local_id))
+                       WHERE id=?""", (task["title"], task["notes"], day, day, position, local_id))
+        if local_task is None or local_task["day"] != day:
+            source_order = (position == 0, position, task["id"])
+            arrivals.setdefault(day, []).append((source_order, local_id))
         pending.extend((event, local_id) for event in history)
+    for day, incoming in arrivals.items():
+        # Keep local priorities and append arrivals in their source order.
+        arrival_ids = [local_id for _, local_id in sorted(incoming)]
+        arriving = set(arrival_ids)
+        current_order = [row["id"] for row in db.execute(
+            "SELECT id FROM tasks WHERE day=? ORDER BY position = 0, position, id", (day,))]
+        order = [local_id for local_id in current_order if local_id not in arriving] + arrival_ids
+        if order != current_order:
+            db.executemany("UPDATE tasks SET position=? WHERE id=?", enumerate(order, 1))
     for event, local_id in sorted(pending, key=lambda item: item[0]["id"]):
         db.execute("INSERT INTO events(task_id,kind,at,effective_date,state_at,title,notes,previous_day) VALUES(?,?,?,?,?,?,?,?)",
                    (local_id, *(event[key] for key in ("kind", "at", "effective_date", "state_at", "title", "notes")),
