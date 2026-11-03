@@ -1,5 +1,6 @@
-const holdDelay = 450;
+const holdDelay = 150;
 const holdTolerance = 8;
+const touchHoldTolerance = 14;
 
 export function bindTaskReorder(row, button, task, onMove) {
   row.dataset.reorderDay = task.day;
@@ -55,7 +56,13 @@ export function bindTaskReorder(row, button, task, onMove) {
     suppressClick = false;
     const group = groupRows();
     if (group.length < 2 || button.getAttribute('aria-expanded') === 'true') return;
-    gesture = { id: event.pointerId, startX: event.clientX, startY: event.clientY, y: event.clientY };
+    gesture = {
+      id: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      y: event.clientY,
+      tolerance: event.pointerType === 'touch' ? touchHoldTolerance : holdTolerance,
+    };
     button.setPointerCapture(event.pointerId);
     gesture.timer = setTimeout(() => {
       if (!row.isConnected || button.disabled) return finish();
@@ -75,7 +82,7 @@ export function bindTaskReorder(row, button, task, onMove) {
       gesture.y = event.clientY;
       cancelAnimationFrame(gesture.frame);
       preview();
-    } else if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > holdTolerance) {
+    } else if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > gesture.tolerance) {
       clearTimeout(gesture.timer);
       suppressClick = true;
     }

@@ -96,12 +96,13 @@ main { width: 100%; min-width: 0; padding: 42px 38px 48px; max-width: 1500px; ma
 .task-meta { display: block; color: #a0a7b0; font-size: 11px; line-height: 1.6; margin-top: 6px; }
 .task-row.discarded .task-title { color: #979fa7; font-weight: 400; }
 .row-actions { position: relative; flex-shrink: 0; margin-right: -8px; }
-.row-menu-button { border: 0; background: transparent; color: #a3abb3; width: 28px; min-width: 28px; height: 32px; }
+.row-menu-button { border: 0; background: transparent; color: #a3abb3; width: 28px; min-width: 28px; height: 32px; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .row-menu-button:hover { background: #f3f5f4; color: #405a48; }
 .task-menu { position: absolute; top: 32px; right: 0; background: #fff; box-shadow: 0 6px 25px #2436301a; border: 1px solid var(--border); border-radius: 8px; padding: 5px; z-index: 5; min-width: 110px; }
 .task-menu button { border: 0; background: transparent; display: block; width: 100%; text-align: left; font-size: 13px; padding: 10px 12px; border-radius: 5px; white-space: nowrap; }
 .task-menu button:hover { background: #f0f4f1; }
-.task-reorder-trigger { touch-action: none; user-select: none; -webkit-touch-callout: none; }
+.task-list:has(.task-menu-pressed) { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.task-reorder-trigger { touch-action: none; }
 .task-row.task-reordering { background: var(--surface-soft); }
 .task-reordering .task-reorder-trigger { cursor: grabbing; color: var(--accent); }
 .task-reordering .task-reorder-trigger svg { display: none; }
