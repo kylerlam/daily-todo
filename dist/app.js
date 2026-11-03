@@ -258,7 +258,9 @@ function makeTaskNotes(task, readOnly) {
     if (!text.trim()) checkbox.setAttribute('aria-label', t('checklistItem'));
     checkbox.addEventListener('change', () => {
       lines[index] = (checkbox.checked ? '☑' : '☐') + line.slice(1);
-      mutateTask(task.id, { notes: lines.join('\n'), created_at: task.created_at }, 'taskSaved');
+      mutateTask(task.id, {
+        notes: lines.join('\n'), notes_revision: task.notes_revision, created_at: task.created_at,
+      }, 'taskSaved');
     });
     label.append(checkbox, node('span', '', text));
     notes.append(label);
@@ -356,6 +358,7 @@ async function mutateTask(id, changes, messageKey, method = 'PATCH') {
     await load();
     toast(t(messageKey));
   } catch (error) {
+    if (error.code === 'TASK_CHANGED') await load();
     toast(error.message, true);
   } finally {
     state.busy = false;
@@ -445,7 +448,11 @@ $('#task-form').addEventListener('submit', async (event) => {
   if (!title) { $('#task-title').focus(); return; }
   $('#form-error').hidden = true;
   const changes = { title, notes: $('#task-notes').value };
-  if (targetTask) changes.created_at = targetTask.created_at;
+  if (targetTask) {
+    changes.created_at = targetTask.created_at;
+    if (changes.notes === targetTask.notes.replace(/\r\n?/g, '\n')) delete changes.notes;
+    else changes.notes_revision = targetTask.notes_revision;
+  }
   const day = $('#task-day').value;
   if (!targetTask || (!targetTask.completed && day !== targetTask.day)) changes.day = day;
   setFormSaving(true);

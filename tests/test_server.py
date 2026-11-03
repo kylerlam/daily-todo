@@ -355,6 +355,25 @@ class HttpTests(unittest.TestCase):
                                        {"title": "有效修改", "created_at": replacement["created_at"]})
         self.assertEqual((status, json.loads(body)["title"]), (200, "有效修改"))
 
+    def test_stale_checklist_toggle_cannot_overwrite_newer_notes(self):
+        task = self.store.create({"title": "Checklist", "notes": "☐ First item\nOld text"})
+        path = f'/api/tasks/{task["id"]}'
+        original = {"created_at": task["created_at"], "notes_revision": task["notes_revision"]}
+        status, _, body = self.request("PATCH", path, {**original, "notes": "☐ First item\nNew text"})
+        self.assertEqual(status, 200)
+        updated = json.loads(body)
+        self.assertNotEqual(updated["notes_revision"], original["notes_revision"])
+
+        status, _, body = self.request("PATCH", path, {**original, "notes": "☑ First item\nOld text"})
+        self.assertEqual((status, json.loads(body)["code"]), (409, "TASK_CHANGED"))
+        self.assertEqual(self.store.current()["tasks"], [updated])
+        self.assertEqual(len(self.store.export()["events"]), 2)
+
+        status, _, body = self.request("PATCH", path, {
+            **original, "notes_revision": updated["notes_revision"], "notes": "☑ First item\nNew text",
+        })
+        self.assertEqual((status, json.loads(body)["notes"]), (200, "☑ First item\nNew text"))
+
     def test_yaml_export_is_default_with_complete_history_and_safe_strings(self):
         title = 'yes: #todo "中文" \\ 😀'
         notes = '2026-10-30\nnull\r\nyes\tno\x00\x1f\x7f\x85\x9f\u2028\u2029---\n!!python/object: {}'

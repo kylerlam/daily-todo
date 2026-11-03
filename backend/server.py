@@ -32,7 +32,11 @@ else:
 MAX_BODY = 32768
 PASSWORD_ITERATIONS = 600000
 SESSION_SECONDS = 30 * 24 * 60 * 60
-TASK_PATCH_FIELDS = {"title", "notes", "completed", "discarded", "day", "before_id", "created_at"}
+TASK_PATCH_FIELDS = {"title", "notes", "notes_revision", "completed", "discarded", "day", "before_id", "created_at"}
+
+
+def notes_revision(notes):
+    return hashlib.sha256(notes.encode("utf-8")).hexdigest()
 
 
 def load_config(path=None):
@@ -279,6 +283,7 @@ class Store:
     def task(row):
         return {
             "id": row["id"], "title": row["title"], "notes": row["notes"],
+            "notes_revision": notes_revision(row["notes"]),
             "created_at": row["created_at"], "day": row["day"], "position": row["position"],
             "completed": row["kind"] == "complete",
             "completed_at": row["state_at"] if row["kind"] == "complete" else None,
@@ -313,7 +318,7 @@ class Store:
 
     def patch(self, task_id, data):
         validate_fields(data, TASK_PATCH_FIELDS)
-        if not data.keys() - {"created_at"}:
+        if not data.keys() - {"created_at", "notes_revision"}:
             raise RequestError("Provide at least one change.", code="EMPTY_UPDATE")
         if "completed" in data and "discarded" in data:
             raise RequestError("Change only one task status at a time.", code="CONFLICTING_STATUS")
@@ -328,6 +333,8 @@ class Store:
             old = self.latest(db, task_id)
             if "created_at" in data and old["created_at"] != data["created_at"]:
                 raise RequestError("The task has changed. Refresh before changing it.", 409, "TASK_CHANGED")
+            if "notes_revision" in data and data["notes_revision"] != notes_revision(old["notes"]):
+                raise RequestError("The task notes have changed. Refresh before editing them.", 409, "TASK_CHANGED")
             if "before_id" in data:
                 self.reorder(db, old, before_id)
                 return self.task(self.latest(db, task_id))
