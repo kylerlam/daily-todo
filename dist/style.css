@@ -16,7 +16,7 @@ svg { width: 20px; height: 20px; display: block; flex-shrink: 0; }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid #8aa995; outline-offset: 3px; }
 [hidden] { display: none !important; }
 button:active:not(:disabled) { transform: translateY(1px); }
-.topbar { height: 88px; border-bottom: 1px solid var(--border); background: #fff; display: flex; align-items: center; padding: 0 38px; gap: 26px; position: relative; z-index: 2; }
+.topbar { height: 88px; border-bottom: 1px solid var(--border); background: #fff; display: flex; align-items: center; padding: 0 38px; gap: 26px; position: sticky; top: 0; z-index: 10; }
 .brand { display: inline-flex; align-items: center; flex-shrink: 0; }
 .brand img { display: block; width: auto; height: 44px; }
 .tagline { padding-left: 24px; border-left: 1px solid #d7dde3; color: var(--muted); font-size: 16px; line-height: 22px; margin: 0; }
