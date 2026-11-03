@@ -67,7 +67,10 @@
       <div class="field notes-field">
         <label for="task-notes"><span data-i18n="notesLabel">Notes</span> <span class="optional" data-i18n="optional">Optional</span></label>
         <div class="notes-tools"><button class="icon-button" id="insert-checklist-item" type="button" aria-label="Insert checklist item" title="Insert checklist item" data-i18n-aria-label="insertChecklistItem" data-i18n-title="insertChecklistItem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg></button></div>
-        <textarea id="task-notes" name="notes" rows="3" maxlength="5000" placeholder="Details, an address, or a note to yourself…" data-i18n-placeholder="notesPlaceholder"></textarea>
+        <div class="notes-editor">
+          <textarea id="task-notes" name="notes" rows="3" maxlength="5000" placeholder="Details, an address, or a note to yourself…" data-i18n-placeholder="notesPlaceholder"></textarea>
+          <div class="notes-checklist" id="notes-checklist"><div class="notes-checklist-lines"></div></div>
+        </div>
       </div>
       <label class="field date-field"><span data-i18n="taskDateLabel">Task date</span><input id="task-day" name="day" type="date" max="9998-12-31" required></label>
       <p class="field-hint" id="date-hint" data-i18n="newDateHint">This task appears on this date in the calendar.</p>

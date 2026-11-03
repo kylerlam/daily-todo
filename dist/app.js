@@ -4,11 +4,11 @@ import { requireLogin, redirectToLogin, errorMessage } from './auth.mjs';
 import { initSettings } from './settings.mjs';
 import { applyTheme } from './theme.mjs';
 import { bindTaskReorder } from './task-reorder.mjs';
+import { bindNotesChecklist, checklistPrefix } from './notes-checklist.mjs';
 
 applyTheme();
 
 const $ = (selector) => document.querySelector(selector);
-const checklistPrefix = /^[☐☑] /;
 const icons = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   list: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
@@ -374,6 +374,7 @@ function openForm(task = null) {
   $('#form-error').hidden = true;
   $('#save-task').disabled = false;
   $('#task-dialog').showModal();
+  refreshNotesChecklist();
   $('#task-title').focus();
 }
 function updateTaskDialog() {
@@ -387,18 +388,21 @@ function setFormSaving(saving) {
   $('#task-notes').readOnly = saving;
   $('#insert-checklist-item').disabled = saving;
   $('#task-day').disabled = saving || Boolean(editingTask?.completed);
+  refreshNotesChecklist();
 }
 function closeMenus() {
   document.querySelectorAll('.task-menu').forEach((menu) => { menu.hidden = true; });
   document.querySelectorAll('.row-menu-button').forEach((button) => button.setAttribute('aria-expanded', 'false'));
 }
 const notesEditor = $('#task-notes');
+const refreshNotesChecklist = bindNotesChecklist(notesEditor, $('#notes-checklist'), () => t('checklistItem'));
 function notesLineStart() {
   return notesEditor.value.slice(0, notesEditor.selectionStart).lastIndexOf('\n') + 1;
 }
 function replaceNotesRange(text, start, end) {
   if (notesEditor.value.length - (end - start) + text.length > notesEditor.maxLength) return false;
   notesEditor.setRangeText(text, start, end, 'end');
+  refreshNotesChecklist();
   return true;
 }
 $('#insert-checklist-item').addEventListener('click', () => {

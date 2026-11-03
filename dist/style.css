@@ -142,7 +142,24 @@ dialog::backdrop { background: #19282055; backdrop-filter: blur(3px); }
 .field input::placeholder, .field textarea::placeholder { color: #a7afb6; }
 .notes-tools { margin-top: 8px; }
 .notes-tools .icon-button { width: 36px; min-width: 36px; height: 36px; }
-.notes-field textarea { margin-top: 6px; }
+.notes-editor { position: relative; margin-top: 6px; }
+.notes-editor textarea { margin-top: 0; }
+.notes-editor textarea, .notes-checklist-lines { white-space: pre-wrap; overflow-wrap: break-word; }
+.notes-checklist { position: absolute; top: 1px; left: 1px; overflow: clip; pointer-events: none; }
+.notes-checklist-lines { padding: 12px 13px; font-size: 15px; line-height: 1.7; color: transparent; }
+.notes-checklist-line { position: relative; min-height: 1lh; }
+.notes-field .notes-checklist input {
+  position: absolute; top: calc((1lh - 20px) / 2); left: -7px; appearance: none;
+  width: 20px; height: 20px; margin: 0; padding: 0; border: 1px solid var(--subtle); border-radius: 5px;
+  background: linear-gradient(var(--input-bg), var(--input-bg)), #fff;
+  cursor: pointer; pointer-events: auto;
+}
+.notes-field .notes-checklist input:checked {
+  border-color: var(--accent);
+  background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3 8 3 3 7-7' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 13px no-repeat;
+}
+.notes-checklist input:disabled { cursor: default; }
+.notes-checklist input:focus-visible { outline-offset: 1px; }
 .optional { font-weight: 400; font-size: 12px; color: #99a2aa; margin-left: 7px; }
 .date-field { margin-bottom: 7px; }
 .date-field input { width: auto; min-width: 200px; max-width: 100%; min-height: 48px; }
@@ -241,7 +258,7 @@ dialog::backdrop { background: #19282055; backdrop-filter: blur(3px); }
   .list-section-header > span { font-size: 11px; }
   dialog { padding: 23px; max-height: calc(100dvh - 32px); }
   .dialog-heading h2 { font-size: 20px; }
-  .field input, .field textarea, .field select { font-size: 16px; }
+  .field input, .field textarea, .field select, .notes-checklist-lines { font-size: 16px; }
   .toast { bottom: 18px; }
   .mobile-export { display: flex; justify-content: center; width: 100%; padding: 27px 0 0; font-size: 12px; color: #8f99a3; gap: 8px; align-items: center; background: transparent; border: 0; }
   .mobile-export svg { height: 16px; width: 16px; }
