@@ -408,13 +408,14 @@ function replaceNotesRange(text, start, end) {
 $('#insert-checklist-item').addEventListener('click', () => {
   const start = notesLineStart();
   const line = notesEditor.value.slice(start).split('\n', 1)[0];
-  const hasCheckbox = checklistPrefix.test(line);
-  const prefixLength = hasCheckbox ? 2 : 0;
   const caret = notesEditor.selectionStart;
-  if (!line.slice(prefixLength).trim()) {
-    if (hasCheckbox) notesEditor.setSelectionRange(start + prefixLength, start + prefixLength);
-    else replaceNotesRange('☐ ', start, start);
-  } else if (caret <= start + prefixLength) {
+  if (!checklistPrefix.test(line)) {
+    const end = notesEditor.selectionEnd;
+    const direction = notesEditor.selectionDirection;
+    if (replaceNotesRange('☐ ', start, start)) notesEditor.setSelectionRange(caret + 2, end + 2, direction);
+  } else if (!line.slice(2).trim()) {
+    notesEditor.setSelectionRange(start + 2, start + 2);
+  } else if (caret <= start + 2) {
     if (replaceNotesRange('☐ \n', start, start)) notesEditor.setSelectionRange(start + 2, start + 2);
   } else {
     replaceNotesRange('\n☐ ', caret, caret);
