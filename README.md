@@ -43,20 +43,22 @@ White is the default theme.
 
 ## Run with Docker
 
+If you are upgrading from the `daily todo/` deployment folder, stop the existing service before copying its entire `data/` directory, including any SQLite WAL files, to `compose/data/`. Copy your existing `config/app.toml` to `compose/config/app.toml` and any deployment-local `.env` to `compose/.env`. Keep the old files until you have verified the new deployment, and avoid overwriting a populated destination database.
+
 Build the local image from the repository root, then prepare and start the deployment folder:
 
 ```sh
 docker compose build
-mkdir -p "daily todo/data"
-cp -n "daily todo/config/app.example.toml" "daily todo/config/app.toml"
-cd "daily todo"
+mkdir -p "compose/data"
+cp -n "compose/config/app.example.toml" "compose/config/app.toml"
+cd compose
 TDL_UID="$(id -u)" TDL_GID="$(id -g)" docker compose up -d
 ```
 
 Keep an existing `app.toml` when upgrading; `cp -n` will not overwrite it. The deployment layout is:
 
 ```text
-daily todo/
+compose/
   docker-compose.yml          # Runs the already-built tdl:local image
   config/
     app.example.toml          # Committed configuration template
@@ -66,9 +68,9 @@ daily todo/
     daily-todo.yml            # Task/history copy refreshed by HTTP export
 ```
 
-Open [http://localhost:3456](http://localhost:3456), sign in, and change the default credentials in Settings. Compose binds to `127.0.0.1` by default, so the service is available only on the host computer. The container runs as the supplied UID/GID and needs write access to `daily todo/data/`. Configuration is mounted read-only into the container.
+Open [http://localhost:3456](http://localhost:3456), sign in, and change the default credentials in Settings. Compose binds to `127.0.0.1` by default, so the service is available only on the host computer. The container runs as the supplied UID/GID and needs write access to `compose/data/`. Configuration is mounted read-only into the container.
 
-When upgrading from a version that mounted the repository-root `data/` folder, stop the existing container first. Copy the complete old data folder into an empty `daily todo/data/` before starting this version, including any SQLite WAL files. Keep the old folder until you have verified the upgrade. Do not overwrite a populated destination database or combine SQLite files; use the application's export/import flow when merging separate installations.
+When upgrading from a version that mounted the repository-root `data/` folder, stop the existing container first. Copy the complete old data folder into an empty `compose/data/` before starting this version, including any SQLite WAL files. Keep the old folder until you have verified the upgrade. Do not overwrite a populated destination database or combine SQLite files; use the application's export/import flow when merging separate installations.
 
 To use the app from a phone on the same trusted network, create a local `.env` beside the Compose file you use:
 
@@ -80,7 +82,7 @@ TDL_BIND_ADDRESS=0.0.0.0
 
 Replace the UID and GID with the output of `id -u` and `id -g` on the host, then run `docker compose up -d` from that folder. Connect the phone to the same network and open `http://<host-lan-address>:3456` using the host's LAN address. Binding to `0.0.0.0` makes the service listen on all host interfaces; access still depends on the host firewall and network.
 
-The repository-root `compose.yaml` is the development entry point: `docker compose up -d --build` builds from source and mounts the same `daily todo/data/` and `daily todo/config/` directories. The deployment folder's `docker-compose.yml` only runs `tdl:local`; it has no build instructions. Use one entry point at a time.
+The repository-root `compose.yaml` is the development entry point: `docker compose up -d --build` builds from source and mounts the same `compose/data/` and `compose/config/` directories. The deployment folder's `docker-compose.yml` only runs `tdl:local`; it has no build instructions. Use one entry point at a time.
 
 For a Docker-capable NAS, copy the deployment folder and provide an image built for the NAS CPU architecture. A local image is not automatically available on another machine. For example, save it on the build machine and load the transferred archive on the NAS:
 
@@ -90,7 +92,7 @@ docker save -o tdl-local.tar tdl:local
 
 # NAS, after transferring the archive and deployment folder
 docker load -i tdl-local.tar
-cd "daily todo"
+cd compose
 TDL_UID="$(id -u)" TDL_GID="$(id -g)" docker compose up -d
 ```
 
@@ -109,7 +111,7 @@ After editing source files, rebuild from the repository root with `docker compos
 
 ## Configuration and HTTPS
 
-Edit the host-side `daily todo/config/app.toml`:
+Edit the host-side `compose/config/app.toml`:
 
 ```toml
 [app]
@@ -135,7 +137,7 @@ Recreating with `docker compose up -d` applies a changed environment value. Comp
 
 ## Export and import data
 
-**Export data** downloads YML (YAML) by default, with JSON available as an alternative. Both contain all tasks and their history events. Exports exclude account credentials and sessions and do not modify task history. Each authenticated HTTP export also atomically saves a YML copy as `daily todo/data/daily-todo.yml`, even when the requested download is JSON. This is a snapshot from the export request, not a live-synchronized file; later task changes appear in it only after another export. Deleting a task does not change exports or backups already saved; importing an old export can restore a deleted task.
+**Export data** downloads YML (YAML) by default, with JSON available as an alternative. Both contain all tasks and their history events. Exports exclude account credentials and sessions and do not modify task history. Each authenticated HTTP export also atomically saves a YML copy as `compose/data/daily-todo.yml`, even when the requested download is JSON. This is a snapshot from the export request, not a live-synchronized file; later task changes appear in it only after another export. Deleting a task does not change exports or backups already saved; importing an old export can restore a deleted task.
 
 On desktop browsers that implement the File System Access save picker, in a secure context such as localhost or HTTPS, the app opens the system save dialog before fetching the export. Choose a folder and filename there. Cancelling the picker stops the operation without starting a fallback download. A failed write or close attempts to abort the writable stream and does not report success.
 
@@ -162,9 +164,9 @@ Import merges task history without clearing existing data. An identical export o
 
 ## Long-term storage and recovery
 
-The primary database is `daily todo/data/todo.sqlite3`. While the service runs, SQLite may also create `-wal` and `-shm` files. Tasks, priority order, history events, account credentials, and sessions are persisted in this host-mounted directory. The application does not automatically expire task history. Changes to task text, dates, and status append history events. Deleting a task removes that task and all its events in one transaction. Long-term availability depends on retaining the data and maintaining usable backups.
+The primary database is `compose/data/todo.sqlite3`. While the service runs, SQLite may also create `-wal` and `-shm` files. Tasks, priority order, history events, account credentials, and sessions are persisted in this host-mounted directory. The application does not automatically expire task history. Changes to task text, dates, and status append history events. Deleting a task removes that task and all its events in one transaction. Long-term availability depends on retaining the data and maintaining usable backups.
 
-For a complete backup, stop the container, copy the entire `daily todo/data/` directory and retain `daily todo/config/app.toml`, then start the container again. To restore, stop the container, retain a copy of the current data, put the backed-up directory and configuration back at the same mounted paths, and restart to verify them. Do not copy only the main database file while the service is running and omit its WAL. A database backup includes account and session records as well as task history; a YML/JSON export and `daily-todo.yml` do not.
+For a complete backup, stop the container, copy the entire `compose/data/` directory and retain `compose/config/app.toml`, then start the container again. To restore, stop the container, retain a copy of the current data, put the backed-up directory and configuration back at the same mounted paths, and restart to verify them. Do not copy only the main database file while the service is running and omit its WAL. A database backup includes account and session records as well as task history; a YML/JSON export and `daily-todo.yml` do not.
 
 The app does not schedule external backups. Keep the database, exports, and configuration in locations you control. The Git ignore rules exclude runtime data, exports, backups, local `.env` files, and private `docs/`. Review files before publishing a repository and do not force-add private data.
 
@@ -173,7 +175,7 @@ The app does not schedule external backups. Keep the database, exports, and conf
 Run directly with Python 3.13:
 
 ```sh
-CONFIG_FILE="daily todo/config/app.toml" DATA_DIR="daily todo/data" python3 backend/server.py
+CONFIG_FILE="compose/config/app.toml" DATA_DIR="compose/data" python3 backend/server.py
 ```
 
 The direct server defaults to `127.0.0.1:8080`. Its environment variables are:
@@ -196,7 +198,7 @@ node --test tests/*.test.mjs
 node --check dist/app.js
 for file in dist/*.mjs; do node --check "$file"; done
 docker compose config --quiet
-docker compose -f "daily todo/docker-compose.yml" config --quiet
+docker compose -f "compose/docker-compose.yml" config --quiet
 ```
 
 Python integration tests start temporary loopback HTTP servers and use temporary databases. They do not write to the application's real data directory. The tests cover configuration, daily history, transactional persistence, input validation, exports and imports, sign-in, session expiry and revocation, account changes, default-credential visibility, registration restrictions, and request-origin checks. Node tests cover export-save ordering and cancellation, import-file checks, password visibility, language selection and translations, and theme preferences.

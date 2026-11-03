@@ -1,4 +1,6 @@
 /data/
+/compose/data/
+/compose/config/app.toml
 /daily todo/data/
 /daily todo/config/app.toml
 /docs/

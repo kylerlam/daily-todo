@@ -11,8 +11,8 @@ services:
     ports:
       - "${TDL_BIND_ADDRESS:-127.0.0.1}:3456:8080"
     volumes:
-      - ./daily todo/data:/app/data
-      - ./daily todo/config:/app/config:ro
+      - ./compose/data:/app/data
+      - ./compose/config:/app/config:ro
     read_only: true
     tmpfs:
       - /tmp
