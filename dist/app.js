@@ -387,6 +387,7 @@ function setFormSaving(saving) {
   $('#task-title').readOnly = saving;
   $('#task-notes').readOnly = saving;
   $('#insert-checklist-item').disabled = saving;
+  $('#clear-notes').disabled = saving;
   $('#task-day').disabled = saving || Boolean(editingTask?.completed);
   refreshNotesChecklist();
 }
@@ -420,6 +421,10 @@ $('#insert-checklist-item').addEventListener('click', () => {
   } else {
     replaceNotesRange('\n☐ ', caret, caret);
   }
+  notesEditor.focus();
+});
+$('#clear-notes').addEventListener('click', () => {
+  replaceNotesRange('', 0, notesEditor.value.length);
   notesEditor.focus();
 });
 notesEditor.addEventListener('beforeinput', (event) => {

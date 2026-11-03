@@ -66,7 +66,10 @@
       <label class="field"><span data-i18n="taskTitleLabel">What would you like to do?</span><input id="task-title" name="title" required maxlength="300" autocomplete="off" placeholder="For example, read a chapter" data-i18n-placeholder="taskTitlePlaceholder"></label>
       <div class="field notes-field">
         <label for="task-notes"><span data-i18n="notesLabel">Notes</span> <span class="optional" data-i18n="optional">Optional</span></label>
-        <div class="notes-tools"><button class="icon-button" id="insert-checklist-item" type="button" aria-label="Insert checklist item" title="Insert checklist item" data-i18n-aria-label="insertChecklistItem" data-i18n-title="insertChecklistItem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg></button></div>
+        <div class="notes-tools">
+          <button class="icon-button" id="insert-checklist-item" type="button" aria-label="Insert checklist item" title="Insert checklist item" data-i18n-aria-label="insertChecklistItem" data-i18n-title="insertChecklistItem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg></button>
+          <button class="icon-button" id="clear-notes" type="button" aria-label="Clear notes" title="Clear notes" data-i18n-aria-label="clearNotes" data-i18n-title="clearNotes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7"/></svg></button>
+        </div>
         <div class="notes-editor">
           <textarea id="task-notes" name="notes" rows="3" maxlength="5000" placeholder="Details, an address, or a note to yourself…" data-i18n-placeholder="notesPlaceholder"></textarea>
           <div class="notes-checklist" id="notes-checklist"><div class="notes-checklist-lines"></div></div>

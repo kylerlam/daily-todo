@@ -140,7 +140,7 @@ dialog::backdrop { background: #19282055; backdrop-filter: blur(3px); }
 .field { display: block; font-size: 14px; font-weight: 550; margin: 0 0 20px; }
 .field input, .field textarea, .field select { display: block; width: 100%; padding: 12px 13px; border: 1px solid #dfe5e1; border-radius: 7px; background: #fff; color: #252a30; font-size: 15px; line-height: 1.7; margin-top: 9px; resize: vertical; }
 .field input::placeholder, .field textarea::placeholder { color: #a7afb6; }
-.notes-tools { margin-top: 8px; }
+.notes-tools { display: flex; gap: 6px; margin-top: 8px; }
 .notes-tools .icon-button { width: 36px; min-width: 36px; height: 36px; }
 .notes-editor { position: relative; margin-top: 6px; }
 .notes-editor textarea { margin-top: 0; }
