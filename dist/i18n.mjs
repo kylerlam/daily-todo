@@ -29,6 +29,7 @@ const entries = {
   weekdaySun: ['Sun', 'dom', '日', '日'],
   legendCompleted: ['Completed', 'Completadas', '有完成', '有完成'],
   legendPending: ['Pending', 'Pendientes', '有待办', '有待辦'],
+  legendOverdue: ['Overdue', 'Vencidas', '有逾期', '有逾期'],
   calendarRegionLabel: ['Calendar and daily tasks', 'Calendario y tareas del día', '日历与当天待办', '日曆與當天待辦'],
   selectedDateLabel: ['Choose a date', 'Elegir una fecha', '选择日期', '選擇日期'],
   dayLoading: ['Loading…', 'Cargando…', '正在读取…', '正在讀取…'],

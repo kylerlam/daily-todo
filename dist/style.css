@@ -61,12 +61,14 @@ main { width: 100%; min-width: 0; padding: 42px 38px 48px; max-width: 1500px; ma
 .calendar-day.selected .day-number { background: var(--accent); color: #fff; font-weight: 650; }
 .calendar-day.outside .day-number { color: #b8bec5; }
 .calendar-day.selected.outside .day-number { color: #fff; }
-.day-indicators { min-height: 6px; display: flex; gap: 4px; }
-.activity-dot { width: 5px; height: 5px; display: inline-block; border-radius: 50%; flex-shrink: 0; }
-.done-dot { background: #5c8068; }
-.pending-dot { background: #a5afb5; }
-.calendar-legend { min-height: 42px; padding: 12px 20px; display: flex; justify-content: flex-end; gap: 16px; color: #9199a3; font-size: 11px; }
-.calendar-legend > span { display: flex; align-items: center; gap: 6px; }
+.day-indicators { min-height: 9px; display: flex; gap: 5px; }
+.activity-dot { width: 9px; height: 9px; display: inline-block; border-radius: 50%; flex-shrink: 0; }
+.done-dot { background: #178547; }
+.pending-dot { background: var(--subtle); }
+.overdue-dot { background: #d33845; }
+.calendar-legend { min-height: 46px; padding: 12px 20px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px 16px; color: #647082; font-size: 13px; font-weight: 550; }
+.calendar-legend > span { display: flex; align-items: center; gap: 7px; }
+.calendar-legend .activity-dot { width: 11px; height: 11px; }
 .day-panel { min-height: 530px; display: flex; flex-direction: column; }
 .day-header { padding: 27px 26px 0; }
 .day-header h2 { font-size: 21px; line-height: 1.5; font-weight: 650; letter-spacing: -.3px; margin: 0 0 20px; }
@@ -208,8 +210,7 @@ dialog::backdrop { background: #19282055; backdrop-filter: blur(3px); }
   .weekdays { font-size: 12px; padding: 4px 0 12px; }
   .calendar-day { min-height: 55px; padding: 5px 0 4px; gap: 3px; font-size: 12px; }
   .day-number { height: 29px; width: 29px; }
-  .activity-dot { height: 4px; width: 4px; }
-  .calendar-legend { min-height: 34px; padding: 9px 16px; font-size: 10px; gap: 14px; }
+  .calendar-legend { padding: 10px 12px; font-size: 12px; gap: 8px 12px; }
   .day-panel { min-height: 325px; }
   .day-header { padding: 20px 20px 0; }
   .day-header h2 { font-size: 18px; margin-bottom: 15px; }

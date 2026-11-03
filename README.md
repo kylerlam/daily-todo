@@ -4,7 +4,7 @@ A small personal todo list and calendar, released under the MIT License. The cal
 
 ## Tasks and daily history
 
-- The calendar shows each task on its assigned date.
+- The calendar shows each task on its assigned date. A past date with unfinished work has a red dot. Green marks completed work, and gray marks unfinished work scheduled for today or later.
 - You can check off tasks early or after their assigned date. The calendar updates the assigned day's list, and the completion timestamp records when you checked the task off.
 - Change the **Task date** of an unfinished task to move it to another day's list. **Task list** groups unfinished tasks and tasks completed today by their assigned dates. The **Today** group uses today's date.
 - Press and hold a task's three-dot button, then drag the handle to change its priority among unfinished tasks on the same date. With the button focused, use **Alt+↑** or **Alt+↓**.

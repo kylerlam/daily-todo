@@ -37,7 +37,11 @@
           </div>
           <div class="weekdays" aria-hidden="true"><span data-i18n="weekdayMon">M</span><span data-i18n="weekdayTue">T</span><span data-i18n="weekdayWed">W</span><span data-i18n="weekdayThu">T</span><span data-i18n="weekdayFri">F</span><span data-i18n="weekdaySat">S</span><span data-i18n="weekdaySun">S</span></div>
           <div id="calendar-grid" class="calendar-grid" aria-label="Choose date" data-i18n-aria-label="selectedDateLabel"></div>
-          <div class="calendar-legend"><span><i class="activity-dot done-dot"></i><span data-i18n="legendCompleted">Completed</span></span><span><i class="activity-dot pending-dot"></i><span data-i18n="legendPending">Pending</span></span></div>
+          <div class="calendar-legend">
+            <span><i class="activity-dot done-dot"></i><span data-i18n="legendCompleted">Completed</span></span>
+            <span><i class="activity-dot pending-dot"></i><span data-i18n="legendPending">Pending</span></span>
+            <span><i class="activity-dot overdue-dot"></i><span data-i18n="legendOverdue">Overdue</span></span>
+          </div>
         </div>
         <section class="panel day-panel" aria-labelledby="day-title">
           <div class="day-header"><h2 id="day-title"></h2><p id="day-summary" aria-live="polite" data-i18n="dayLoading">Loading…</p><div class="progress-track" role="progressbar" aria-label="Daily completion progress" data-i18n-aria-label="dayProgressLabel" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="day-progress"></div></div></div>

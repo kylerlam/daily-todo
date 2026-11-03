@@ -147,8 +147,12 @@ function renderCalendar() {
     button.append(node('span', 'day-number', date.getUTCDate()));
     const dots = node('span', 'day-indicators');
     dots.setAttribute('aria-hidden', 'true');
-    if (summary?.completed) dots.append(node('i', 'activity-dot done-dot'));
-    if (summary?.pending) dots.append(node('i', 'activity-dot pending-dot'));
+    if (value < state.today && summary?.pending) {
+      dots.append(node('i', 'activity-dot overdue-dot'));
+    } else {
+      if (summary?.completed) dots.append(node('i', 'activity-dot done-dot'));
+      if (summary?.pending) dots.append(node('i', 'activity-dot pending-dot'));
+    }
     button.append(dots);
     button.addEventListener('click', () => selectDate(value));
     grid.append(button);
