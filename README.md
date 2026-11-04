@@ -2,7 +2,7 @@
 
 This `codex/demo` branch is a standalone, static demo of Daily Todo. Open it and try the task list and calendar without signing in. Demo changes stay in your browser’s localStorage until the next Hong Kong calendar day.
 
-The demo includes the production features through `ab77bce` on `main` (`v0.2.2`). The public demo is available on Cloudflare Pages. [daily-todo-demo.pages.dev](https://daily-todo-demo.pages.dev/)
+The demo includes the production features through `e6f0f25` on `main` (`v0.2.3`). The public demo is available on Cloudflare Pages. [daily-todo-demo.pages.dev](https://daily-todo-demo.pages.dev/)
 
 ## Try the demo locally
 
@@ -19,7 +19,7 @@ Open [http://127.0.0.1:4173](http://127.0.0.1:4173). Python here is only a conve
 - Create, reschedule, complete, reorder, and delete tasks. Insert and toggle checkboxes in notes.
 - Select dates, change months, and return to Today. The four samples show an overdue task, a completed task today, an unfinished task today, and an upcoming task. The calendar shows each task on its assigned date, including tasks completed early.
 - Reload the page to keep changes on the same day. After midnight Hong Kong time, the demo restores four fresh examples the next time it runs. Use **Reset sample data** to do this immediately. The reset replaces only demo tasks and history.
-- Switch between four languages and ten themes in Settings. **Settings → About** shows the version. There is no account, password change, or sign-out in the demo.
+- Switch between four languages and ten themes in Settings. The **Settings** title shows the version. There is no account, password change, or sign-out in the demo.
 - Export the browser’s demo tasks and history as JSON or YML. YML uses JSON-compatible YAML 1.2 syntax. Export reads local data and uses the existing save picker/download flow. This branch has no import interface.
 
 ## Data and isolation
@@ -40,6 +40,8 @@ The backend, Docker files, and their tests remain in the repository as productio
 - **Source branch:** `codex/demo`.
 
 Direct Upload is manual: pushing this Git branch does **not** automatically update the public demo. To publish an update, check out the intended demo commit, verify that `dist/` contains only the static demo assets, then use **Pages → daily-todo-demo → Create deployment → Production** and upload the contents of `dist/` (or a ZIP with `index.html` at its root). Never upload the repository root, backend, runtime data, or private configuration.
+
+Before packaging, check that `APP_VERSION` in `git show HEAD:dist/settings.mjs` matches the planned release tag. After deployment, confirm the same version appears in the **Settings** title.
 
 The dashboard labels the Direct Upload production source as `main`; no Git repository is connected, and this label does not deploy the repository’s production branch. The uploaded file contents, rather than that label, identify this demo’s source. Automatic Git deployments would require a separate Git-integrated Pages project; see Cloudflare’s [Direct Upload guide](https://developers.cloudflare.com/pages/get-started/direct-upload/).
 

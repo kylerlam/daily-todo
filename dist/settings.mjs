@@ -1,7 +1,7 @@
 import { applyTranslations, getLocale, setLocale, t } from './i18n.mjs';
 import { THEMES, getTheme, setTheme, applyTheme } from './theme.mjs';
 
-const APP_VERSION = 'v0.2.2';
+const APP_VERSION = 'v0.2.3';
 
 export function initSettings() {
   applyTheme();
@@ -10,7 +10,7 @@ export function initSettings() {
   dialog.className = 'settings-dialog';
   dialog.setAttribute('aria-labelledby', 'settings-title');
   dialog.innerHTML = `
-    <div class="dialog-heading"><h2 id="settings-title" data-i18n="settings">Settings</h2><button class="icon-button" id="close-settings" type="button" aria-label="Close settings" data-i18n-aria-label="closeSettings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
+    <div class="dialog-heading"><h2 id="settings-title"><span data-i18n="settings">Settings</span> <code class="settings-version">${APP_VERSION}</code></h2><button class="icon-button" id="close-settings" type="button" aria-label="Close settings" data-i18n-aria-label="closeSettings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
     <section class="preferences-section" aria-labelledby="appearance-heading">
       <h3 id="appearance-heading" data-i18n="appearance">Appearance</h3>
       <label class="field language-field"><span data-i18n="language">Language</span><select id="language-select"><option value="en">English</option><option value="es">Español</option><option value="zh-CN">简体中文</option><option value="zh-TW">繁體中文</option></select></label>
@@ -18,11 +18,7 @@ export function initSettings() {
       <h4 data-i18n="glassTheme">Glass</h4><div class="theme-grid glass-theme-grid" id="glass-themes"></div>
       <h4 data-i18n="gradientThemes">Gradients</h4><div class="theme-grid" id="gradient-themes"></div>
     </section>
-    <p class="field-hint" data-i18n="demoNoAccount">Demo mode has no account or password.</p>
-    <section class="about-section" aria-labelledby="about-heading">
-      <h3 id="about-heading" data-i18n="about">About</h3>
-      <p class="field-hint"><span data-i18n="appVersion">Version</span> <code>${APP_VERSION}</code></p>
-    </section>`;
+    <p class="field-hint" data-i18n="demoNoAccount">Demo mode has no account or password.</p>`;
   document.body.append(dialog);
   const select = dialog.querySelector('#language-select');
   const closeButton = dialog.querySelector('#close-settings');
