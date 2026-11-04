@@ -4,6 +4,8 @@ import { authRequest, errorMessage, redirectToLogin } from './auth.mjs';
 import { initPasswordFields } from './password-field.mjs';
 import { importData, readImportFile } from './import-file.mjs';
 
+const APP_VERSION = 'v0.2.2';
+
 export function initSettings(user = null) {
   applyTheme();
   const dialog = document.createElement('dialog');
@@ -41,6 +43,10 @@ export function initSettings(user = null) {
         <p class="account-notice" id="import-result" role="status" hidden></p>
         <div class="dialog-actions"><button class="button primary" id="import-data" type="submit" disabled data-i18n="importData">Import data</button></div>
       </form>
+    </section>
+    <section class="about-section" aria-labelledby="about-heading">
+      <h3 id="about-heading" data-i18n="about">About</h3>
+      <p class="field-hint"><span data-i18n="appVersion">Version</span> <code>${APP_VERSION}</code></p>
     </section>`;
   document.body.append(dialog);
   const select = dialog.querySelector('#language-select');

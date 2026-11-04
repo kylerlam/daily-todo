@@ -34,6 +34,8 @@ Passwords are stored as salted PBKDF2-HMAC-SHA256 hashes with 600,000 iterations
 
 Settings are also available on the sign-in page. Language and theme choices are saved in the current browser.
 
+**Settings → About** shows the running app's version. Before tagging a release, update `APP_VERSION` in `dist/settings.mjs` to match the release tag and verify it in Settings after building.
+
 - **Languages:** English (`en`, the default), Spanish (`es`), Simplified Chinese (`zh-CN`), and Traditional Chinese (`zh-TW`).
 - **Fresh and minimal, themes 1–5:** White, Mint, Sky, Lavender, and Peach.
 - **Theme 6:** Glass.
