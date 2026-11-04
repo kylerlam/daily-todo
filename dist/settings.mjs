@@ -4,7 +4,7 @@ import { authRequest, errorMessage, redirectToLogin } from './auth.mjs';
 import { initPasswordFields } from './password-field.mjs';
 import { importData, readImportFile } from './import-file.mjs';
 
-const APP_VERSION = 'v0.2.2';
+const APP_VERSION = 'v0.2.3';
 
 export function initSettings(user = null) {
   applyTheme();
