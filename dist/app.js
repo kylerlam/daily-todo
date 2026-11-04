@@ -189,6 +189,20 @@ function makeTaskRow(task) {
   menuButton.setAttribute('aria-label', t('taskMoreLabel', { title: task.title }));
   menuButton.setAttribute('aria-expanded', 'false');
   menuButton.disabled = state.busy;
+  let touchPointerId;
+  menuButton.addEventListener('pointerdown', (event) => {
+    if (event.isPrimary && event.pointerType === 'touch' && !menuButton.disabled) {
+      touchPointerId = event.pointerId;
+      menuButton.classList.add('task-menu-pressed');
+    }
+  });
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    menuButton.addEventListener(type, (event) => {
+      if (event.pointerId !== touchPointerId) return;
+      touchPointerId = undefined;
+      menuButton.classList.remove('task-menu-pressed');
+    });
+  }
   const menu = node('div', 'task-menu');
   menu.hidden = true;
   if (!readOnly) {

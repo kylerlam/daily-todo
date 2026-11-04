@@ -304,7 +304,7 @@
   background: var(--surface);
   color: var(--text);
   text-align: left;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.45;
 }
 .theme-option:hover { border-color: var(--today-ring); }
@@ -359,6 +359,6 @@
 }
 @media (max-width: 540px) {
   .theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .theme-option { min-height: 84px; font-size: 12px; }
+  .theme-option { min-height: 84px; font-size: 14px; }
   .theme-swatch { height: 34px; }
 }
