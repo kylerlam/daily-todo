@@ -58,7 +58,8 @@ dialog::backdrop { background: var(--overlay); }
 .password-toggle:active:not(:disabled) { transform: translateY(-50%); }
 .password-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .password-toggle:disabled { cursor: default; opacity: .5; }
-.data-section { border-top: 1px solid var(--border); margin-top: 30px; padding-top: 26px; }
+.data-section, .about-section { border-top: 1px solid var(--border); margin-top: 30px; padding-top: 26px; }
+.about-section .field-hint { margin: 0; }
 .data-section .field-hint { margin-bottom: 20px; }
 .data-section input[type="file"] { font-size: 15px; padding: 10px; }
 .data-section input[type="file"]::file-selector-button { margin-right: 9px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-soft); color: var(--text); cursor: pointer; }

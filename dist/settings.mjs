@@ -1,6 +1,8 @@
 import { applyTranslations, getLocale, setLocale, t } from './i18n.mjs';
 import { THEMES, getTheme, setTheme, applyTheme } from './theme.mjs';
 
+const APP_VERSION = 'v0.2.2';
+
 export function initSettings() {
   applyTheme();
   const dialog = document.createElement('dialog');
@@ -16,7 +18,11 @@ export function initSettings() {
       <h4 data-i18n="glassTheme">Glass</h4><div class="theme-grid glass-theme-grid" id="glass-themes"></div>
       <h4 data-i18n="gradientThemes">Gradients</h4><div class="theme-grid" id="gradient-themes"></div>
     </section>
-    <p class="field-hint" data-i18n="demoNoAccount">Demo mode has no account or password.</p>`;
+    <p class="field-hint" data-i18n="demoNoAccount">Demo mode has no account or password.</p>
+    <section class="about-section" aria-labelledby="about-heading">
+      <h3 id="about-heading" data-i18n="about">About</h3>
+      <p class="field-hint"><span data-i18n="appVersion">Version</span> <code>${APP_VERSION}</code></p>
+    </section>`;
   document.body.append(dialog);
   const select = dialog.querySelector('#language-select');
   const closeButton = dialog.querySelector('#close-settings');

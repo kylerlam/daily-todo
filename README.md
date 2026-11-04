@@ -2,7 +2,7 @@
 
 This `codex/demo` branch is a standalone, static demo of Daily Todo. Open it and try the task list and calendar without signing in. Demo changes stay in your browser’s localStorage until the next Hong Kong calendar day.
 
-The demo includes the production features through `2a234f2` on `main`. The public demo is available on Cloudflare Pages. [daily-todo-demo.pages.dev](https://daily-todo-demo.pages.dev/)
+The demo includes the production features through `ab77bce` on `main` (`v0.2.2`). The public demo is available on Cloudflare Pages. [daily-todo-demo.pages.dev](https://daily-todo-demo.pages.dev/)
 
 ## Try the demo locally
 
@@ -19,7 +19,7 @@ Open [http://127.0.0.1:4173](http://127.0.0.1:4173). Python here is only a conve
 - Create, reschedule, complete, reorder, and delete tasks. Insert and toggle checkboxes in notes.
 - Select dates, change months, and return to Today. The four samples show an overdue task, a completed task today, an unfinished task today, and an upcoming task. The calendar shows each task on its assigned date, including tasks completed early.
 - Reload the page to keep changes on the same day. After midnight Hong Kong time, the demo restores four fresh examples the next time it runs. Use **Reset sample data** to do this immediately. The reset replaces only demo tasks and history.
-- Switch between four languages and ten themes in Settings. There is no account, password change, or sign-out in the demo.
+- Switch between four languages and ten themes in Settings. **Settings → About** shows the version. There is no account, password change, or sign-out in the demo.
 - Export the browser’s demo tasks and history as JSON or YML. YML uses JSON-compatible YAML 1.2 syntax. Export reads local data and uses the existing save picker/download flow. This branch has no import interface.
 
 ## Data and isolation

@@ -111,6 +111,8 @@ const entries = {
   taskDeleted: ['Task and history deleted.', 'Tarea e historial eliminados.', '待办及其历史已删除', '待辦及其歷史已刪除'],
   settings: ['Settings', 'Ajustes', '设置', '設定'],
   closeSettings: ['Close settings', 'Cerrar ajustes', '关闭设置', '關閉設定'],
+  about: ['About', 'Acerca de', '关于', '關於'],
+  appVersion: ['Version', 'Versión', '版本', '版本'],
   appearance: ['Appearance', 'Apariencia', '外观', '外觀'],
   language: ['Language', 'Idioma', '语言', '語言'],
   themeLabel: ['Theme', 'Tema', '主题', '主題'],
