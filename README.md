@@ -34,7 +34,7 @@ Passwords are stored as salted PBKDF2-HMAC-SHA256 hashes with 600,000 iterations
 
 Settings are also available on the sign-in page. Language and theme choices are saved in the current browser.
 
-**Settings → About** shows the running app's version. Before tagging a release, update `APP_VERSION` in `dist/settings.mjs` to match the release tag and verify it in Settings after building.
+The **Settings** title shows the running app's version.
 
 - **Languages:** English (`en`, the default), Spanish (`es`), Simplified Chinese (`zh-CN`), and Traditional Chinese (`zh-TW`).
 - **Fresh and minimal, themes 1–5:** White, Mint, Sky, Lavender, and Peach.
@@ -173,6 +173,15 @@ For a complete backup, stop the container, copy the entire `compose/data/` direc
 The app does not schedule external backups. Keep the database, exports, and configuration in locations you control. The Git ignore rules exclude runtime data, exports, backups, local `.env` files, and private `docs/`. Review files before publishing a repository and do not force-add private data.
 
 ## Development and verification
+
+Before tagging and packaging a release, update `APP_VERSION` in `dist/settings.mjs` and check the committed version in each checkout used to package the NAS or Pages deployment. Replace the example with the planned tag.
+
+```sh
+release_tag=v0.2.2
+git show HEAD:dist/settings.mjs | grep -Fx "const APP_VERSION = '$release_tag';"
+```
+
+Package the checked commit only if the command prints the expected version. After deployment, open Settings on NAS and Pages and verify the same version in the title.
 
 Run directly with Python 3.13:
 

@@ -42,6 +42,7 @@ body { min-height: 100dvh; background: var(--page-bg); background-attachment: fi
 dialog::backdrop { background: var(--overlay); }
 .settings-trigger { margin-left: -10px; flex-shrink: 0; }
 .settings-dialog { width: min(680px, calc(100vw - 32px)); padding: 30px; }
+.settings-version { margin-inline-start: 6px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-soft); color: var(--text); font-size: .625em; font-weight: 500; white-space: nowrap; }
 .settings-dialog h3 { margin: 0 0 22px; font-size: 18px; font-weight: 650; }
 .settings-dialog h4 { margin: 21px 0 10px; font-size: 14px; color: var(--muted); font-weight: 500; }
 .language-field { max-width: 255px; }
@@ -58,8 +59,7 @@ dialog::backdrop { background: var(--overlay); }
 .password-toggle:active:not(:disabled) { transform: translateY(-50%); }
 .password-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .password-toggle:disabled { cursor: default; opacity: .5; }
-.data-section, .about-section { border-top: 1px solid var(--border); margin-top: 30px; padding-top: 26px; }
-.about-section .field-hint { margin: 0; }
+.data-section { border-top: 1px solid var(--border); margin-top: 30px; padding-top: 26px; }
 .data-section .field-hint { margin-bottom: 20px; }
 .data-section input[type="file"] { font-size: 15px; padding: 10px; }
 .data-section input[type="file"]::file-selector-button { margin-right: 9px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-soft); color: var(--text); cursor: pointer; }
